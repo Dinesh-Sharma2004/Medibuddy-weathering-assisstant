@@ -1,0 +1,206 @@
+# ============================================================================
+# DUMMY FIXTURE SOPs -- FOR TESTS ONLY. NOT REAL POLICY. DO NOT SHIP OR COPY.
+# Every threshold, weight, advice string and tag here is invented so the engine
+# and eval suite can run before the real sops/sops.yaml exists. The real file is
+# sops/sops.yaml and is authored separately; the two are never mixed.
+# ============================================================================
+meta:
+  schema_version: 1
+  severities: [info, advisory, warning, critical]   # ordered low -> high
+  disclose_unknown_from: warning
+  default_time_reference: today
+  # DUMMY namespace. SOP- is allowed on purpose so tests can show an invented SOP-99 is recognised and rejected.
+  id_pattern: '(?:FX|SOP)-[A-Z0-9]+(?:-[A-Z0-9]+)*'
+
+messages:
+  no_guidance: "DUMMY: No applicable SOP evaluated TRUE for this question, so I have no guidance to give."
+  out_of_scope: "DUMMY: I only answer outdoor-activity weather questions."
+  insufficient_intent: "DUMMY: Please tell me which outdoor activity you are asking about."
+  ask_location: "DUMMY: Which city are you asking about?"
+  location_unresolved: "DUMMY: I could not find that place, so I cannot give weather guidance."
+  weather_unavailable: "DUMMY: I could not get weather data right now, so I cannot give guidance."
+  data_unavailable: "DUMMY: A relevant policy could not be fully evaluated because required weather data was unavailable."
+  unknown_disclosure: "DUMMY: Note: I could not check {sop_id} ({title}, severity {severity}) because required weather data was unavailable."
+  no_prior_decision: "DUMMY: I have not given any advice in this chat yet, so there is nothing to explain."
+
+vocabulary:
+  activities:
+    running: "Running or jogging outdoors."
+    cycling: "Riding a bicycle."
+    motorbike: "Riding a motorbike or scooter / two-wheeler."
+    hiking: "Hiking or trekking."
+    picnic: "A picnic or relaxed day out in a park."
+    walking: "Going for a walk."
+  groups:
+    elderly: "Older adults."
+    children: "Kids, including taking children out."
+    pets: "Dogs and other pets."
+  question_types:
+    safety_check: "Is it safe / okay to do something outdoors."
+    travel_delay: "Will travel be delayed or disrupted."
+    suitability: "Is it a good / nice day for something."
+  time_words:
+    today: {description: "Today / the whole day.", window: {day: today, start: "00:00", end: "24:00"}}
+    morning: {description: "This morning.", window: {day: today, start: "06:00", end: "12:00"}}
+    afternoon: {description: "This afternoon.", window: {day: today, start: "12:00", end: "18:00"}}
+    evening: {description: "This evening.", window: {day: today, start: "18:00", end: "22:00"}}
+    tomorrow: {description: "Tomorrow.", window: {day: tomorrow, start: "00:00", end: "24:00"}}
+
+sops:
+  - id: FX-UV-01
+    title: "DUMMY midday UV for exercise"
+    category: outdoor_exercise
+    severity: warning
+    priority: 5
+    applies_to: {activities: [running, cycling, hiking], groups: any, question_types: any}
+    requires: [{field: uv_index, source: hourly}]
+    condition:
+      window_agg: {field: uv_index, agg: max, window: {fixed_local: {start: "11:00", end: "16:00"}}, op: ">=", value: 8, as: uv_peak}
+    advice: "Peak UV between 11:00 and 16:00 is {uv_peak}. Avoid unprotected exercise in that window; use sunscreen or move to early morning or evening."
+    rationale: "Dummy rule exercising a fixed local window with a max aggregation."
+
+  - id: FX-WIND-01
+    title: "DUMMY wind for two-wheelers"
+    category: outdoor_exercise
+    severity: warning
+    priority: 4
+    applies_to: {activities: [cycling, motorbike], groups: any, question_types: any}
+    requires: [{field: wind_speed_10m, source: current}]
+    condition:
+      compare: {field: wind_speed_10m, source: current, op: ">", value: 40, as: wind}
+    advice: "Wind is {wind} km/h. Treat this as a safety risk for two-wheelers, not just a comfort issue."
+    rationale: "Dummy rule: strict greater-than boundary on a current value."
+
+  - id: FX-WIND-02
+    title: "DUMMY extreme wind for everyone"
+    category: general
+    severity: critical
+    priority: 3
+    applies_to: {activities: any, groups: any, question_types: any}
+    requires: [{field: wind_speed_10m, source: current}]
+    condition:
+      compare: {field: wind_speed_10m, source: current, op: ">=", value: 60, as: wind}
+    advice: "Wind is {wind} km/h. Avoid outdoor activity."
+    rationale: "Dummy rule: inclusive boundary, higher severity than FX-WIND-01 so the two can conflict."
+
+  - id: FX-RAIN-TRAVEL-01
+    title: "DUMMY rain chance for travel"
+    category: travel
+    severity: advisory
+    priority: 2
+    applies_to: {activities: any, groups: any, question_types: [travel_delay]}
+    requires: [{field: precipitation_probability, source: hourly}]
+    condition:
+      window_agg: {field: precipitation_probability, agg: max, window: {from_time_reference: true}, op: ">=", value: 70, as: rain_chance}
+    advice: "Rain chance peaks at {rain_chance}% in that period. Expect possible delays and check for alerts before departure."
+    rationale: "Dummy rule: window taken from the user's time reference."
+
+  - id: FX-TOMORROW-RAIN-01
+    title: "DUMMY heavy rain forecast tomorrow for travel"
+    category: travel
+    severity: warning
+    priority: 2
+    applies_to: {activities: any, groups: any, question_types: [travel_delay]}
+    requires: [{field: precipitation_sum, source: daily}]
+    condition:
+      compare: {field: precipitation_sum, source: daily, day: tomorrow, op: ">=", value: 50, as: rain_total}
+    advice: "Tomorrow's forecast rain total is {rain_total} mm. Plan for disruption."
+    rationale: "Dummy rule: daily source for tomorrow."
+
+  - id: FX-HEAT-01
+    title: "DUMMY heat for vulnerable groups"
+    category: vulnerable_groups
+    severity: warning
+    priority: 3
+    applies_to: {activities: any, groups: [elderly, children, pets], question_types: any}
+    requires: [{field: temperature_2m, source: current}]
+    condition:
+      compare: {field: temperature_2m, source: current, op: ">=", value: 38, as: temp}
+    advice: "It is {temp} C. Keep outings short, shaded and hydrated."
+    rationale: "Dummy rule: applies only when a group tag is present."
+
+  - id: FX-COLD-01
+    title: "DUMMY cold for vulnerable groups"
+    category: vulnerable_groups
+    severity: advisory
+    priority: 1
+    applies_to: {activities: any, groups: [elderly, children], question_types: any}
+    requires: [{field: temperature_2m, source: current}]
+    condition:
+      compare: {field: temperature_2m, source: current, op: "<=", value: 5, as: temp}
+    advice: "It is {temp} C. Dress warmly and limit time outside."
+    rationale: "Dummy rule: lower-bound comparison."
+
+  - id: FX-THUNDER-01
+    title: "DUMMY thunderstorm code"
+    category: general
+    severity: critical
+    priority: 4
+    applies_to: {activities: any, groups: any, question_types: any}
+    requires: [{field: weather_code, source: current}]
+    condition:
+      compare: {field: weather_code, source: current, op: in, value: [95, 96, 99], as: code}
+    advice: "A thunderstorm is reported (weather code {code}). Stay indoors."
+    rationale: "Dummy rule: set membership."
+
+  - id: FX-KIDS-RAIN-01
+    title: "DUMMY rain with children"
+    category: vulnerable_groups
+    severity: info
+    priority: 1
+    applies_to: {activities: any, groups: [children], question_types: any}
+    requires: [{field: precipitation, source: current}]
+    condition:
+      compare: {field: precipitation, source: current, op: ">", value: 0.5, as: rain_now}
+    advice: "It is raining ({rain_now} mm now). Bring waterproofs for the children."
+    rationale: "Dummy rule: low severity, so it normally loses conflicts."
+
+  - id: FX-PICNIC-01
+    title: "DUMMY picnic suitability (fuzzy)"
+    category: leisure
+    severity: info
+    priority: 1
+    applies_to: {activities: [picnic], groups: any, question_types: [suitability]}
+    requires:
+      - {field: temperature_2m, source: current}
+      - {field: wind_speed_10m, source: current}
+      - {field: precipitation_probability, source: hourly}
+    condition:
+      score:
+        as: picnic
+        terms:
+          - {field: temperature_2m, source: current, as: temp, weight: 1, default_points: 0,
+             bands: [{op: ">=", value: 18, points: 1}, {op: ">=", value: 12, points: 0.5}]}
+          - {field: wind_speed_10m, source: current, as: wind, weight: 1, default_points: 0,
+             bands: [{op: "<", value: 15, points: 1}, {op: "<", value: 30, points: 0.5}]}
+          - field: precipitation_probability
+            source: hourly
+            agg: max
+            window: {fixed_local: {start: "10:00", end: "18:00"}}
+            as: rain_chance
+            weight: 2
+            default_points: 0
+            bands: [{op: "<", value: 20, points: 1}, {op: "<", value: 50, points: 0.5}]
+        match: {op: ">=", value: 0.6}
+        labels:
+          - {op: ">=", value: 0.85, label: "very good"}
+          - {op: ">=", value: 0.6, label: "fair"}
+    advice: "Picnic conditions look {picnic_label} (comfort score {picnic_value}): {temp} C, wind {wind} km/h, peak rain chance {rain_chance}%."
+    rationale: "Dummy fuzzy rule: deterministic weighted score over several fields."
+
+  - id: FX-SITUATION-01
+    title: "DUMMY situational rain-system override"
+    category: situational
+    severity: advisory
+    priority: 0
+    override: true
+    applies_to: {activities: any, groups: any, question_types: any}
+    requires:
+      - {field: surface_pressure, source: current}
+      - {field: precipitation, source: hourly}
+    condition:
+      all:
+        - compare: {field: surface_pressure, source: current, op: "<", value: 1000, as: pressure}
+        - window_agg: {field: precipitation, agg: sum, window: {from_time_reference: true}, op: ">=", value: 10, as: rain_total}
+    advice: "A low-pressure rain system is affecting this location (pressure {pressure} hPa, {rain_total} mm rain expected in that period). Treat any outdoor plan as high risk."
+    rationale: "Dummy situational rule: combines signals, none extreme alone. Deliberately LOW severity and priority so only the override flag can make it lead (evals S1, test_graph)."

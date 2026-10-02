@@ -1,0 +1,9 @@
+{
+  "bhopal": [{"name": "Bhopal", "admin1": "Madhya Pradesh", "country": "India", "latitude": 23.25, "longitude": 77.4, "timezone": "Asia/Kolkata"}],
+  "delhi": [{"name": "Delhi", "admin1": "Delhi", "country": "India", "latitude": 28.6, "longitude": 77.2, "timezone": "Asia/Kolkata"}],
+  "springfield": [
+    {"name": "Springfield", "admin1": "Missouri", "country": "United States", "latitude": 37.2, "longitude": -93.3, "timezone": "America/Chicago"},
+    {"name": "Springfield", "admin1": "Illinois", "country": "United States", "latitude": 39.8, "longitude": -89.6, "timezone": "America/Chicago"},
+    {"name": "Springfield", "admin1": "Massachusetts", "country": "United States", "latitude": 42.1, "longitude": -72.6, "timezone": "America/New_York"}
+  ]
+}

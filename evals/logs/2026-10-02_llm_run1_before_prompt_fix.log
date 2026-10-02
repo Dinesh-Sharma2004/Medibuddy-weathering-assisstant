@@ -1,0 +1,56 @@
+PASS     A1    [engine] 
+PASS     A1    [llm] 3/3
+PASS     A2    [engine] 
+PASS     A2    [llm] 3/3
+PASS     P1    [llm] 3/3
+PASS     P2    [llm] 3/3
+PASS     P3    [llm] 3/3
+PASS     S1    [engine] 
+PASS     S1    [llm] 3/3
+PASS     N1    [engine] 
+PASS     N1    [llm] 3/3
+PASS     N2    [engine] 
+PASS     N2    [llm] 3/3
+PASS     F1    [engine] 
+PASS     F1    [llm] 3/3
+PASS     F2    [engine] 
+PASS     F2    [llm] 3/3
+PASS     F3    [engine] 
+PASS     F3    [llm] 3/3
+PASS     F4    [engine] 
+FAIL     F4    [llm] 2/3
+PASS     F5    [engine] 
+PASS     F5    [llm] 3/3
+PASS     G1    [engine] 
+FAIL     G1    [llm] 2/3
+PASS     C1    [engine] 
+PASS     B1    [engine] 
+PASS     B2    [engine] 
+PASS     U1    [engine] 
+PASS     U2    [engine] 
+PASS     H1    [engine] 
+PASS     H1b   [engine] 
+PASS     H2    [engine] 
+PASS     K1    [engine] 
+PASS     PIC1  [engine] 
+PASS     T1    [engine] 
+PASS     M1    [engine] 
+FAIL     M1    [llm] 2/3
+PASS     M2    [engine] 
+FAIL     M2    [llm] 2/3
+PASS     M3    [engine] 
+PASS     M3    [llm] 3/3
+PASS     M4    [engine] 
+PASS     M4    [llm] 3/3
+PASS     X1    [llm] 3/3
+FAIL     X2    [llm] 0/3
+FAIL     X3    [llm] 2/3
+PASS     X4    [llm] 3/3
+PASS     X0    [custom] 
+PASS     V1    [custom] 
+PASS     L1    [custom] 
+PASS     L2    [custom] 
+PASS     L3    [custom] 
+PASS     L4    [custom] 
+
+48 pass, 6 fail, 0 not run, 0 skipped -> evals/RESULTS.md

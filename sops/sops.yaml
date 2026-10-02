@@ -1,0 +1,645 @@
+# =============================================================================
+# sops/sops.yaml -- 20 POLICY RULES
+#
+# Design boundary: none of these SOPs copies the four assignment examples.
+# The assignment examples are used only to establish the required policy grammar:
+# specific applicability, explicit evidence, deterministic conditions, severity,
+# traceability, deliberate overlap handling, and a non-numeric/fuzzy policy.
+#
+# Thresholds marked [P] in rationale/comments are prototype policy boundaries chosen
+# for this take-home. They are NOT being attributed to IMD/NWS/OSHA as universal limits.
+# =============================================================================
+meta:
+  schema_version: 1
+  severities: [advisory, warning, critical]
+  disclose_unknown_from: warning
+  id_pattern: '^WA-[0-9]{2}$'
+  default_time_reference: today
+
+messages:
+  no_guidance: "I do not have a policy that applies to those conditions and activity."
+  out_of_scope: "I can only advise on outdoor activities and weather-related safety."
+  insufficient_intent: "Please tell me the outdoor activity or situation you are asking about."
+  ask_location: "Please provide the city or location so I can check the relevant weather."
+  location_unresolved: "I could not resolve that location, so I cannot safely check the weather for it."
+  weather_unavailable: "I could not retrieve the weather data, so I will not guess about the conditions."
+  data_unavailable: "A relevant policy could not be fully evaluated because some required weather data was unavailable."
+  unknown_disclosure: "I could not check {sop_id} ({title}, {severity}) because required weather data was unavailable."
+  no_prior_decision: "There is no earlier weather decision in this conversation for me to explain."
+
+vocabulary:
+  activities:
+    road_driving: "Driving a car, taxi, bus or similar road vehicle."
+    road_travel: "Travel on roads by motor vehicle or public road transport."
+    field_sport: "Outdoor sports played on an open field, such as cricket or football."
+    mountain_trek: "Trekking or hiking on mountainous terrain."
+    snow_trail: "Walking or hiking on trails with snow already on the ground."
+    camping: "Spending the night outdoors in a tent or campsite."
+    gardening: "Outdoor gardening, plant care or frost-sensitive plant handling."
+    outdoor_manual_work: "Physically demanding outdoor work."
+    pet_walk: "Walking a household pet outdoors, especially a dog."
+    outdoor_electrical_work: "Work that handles electrical tools, cords or connections outdoors."
+    temporary_outdoor_structure: "Temporary canopies, tents, umbrellas, inflatable structures or similar setups."
+    stream_crossing: "Crossing a stream, drainage channel or similar water crossing."
+    stargazing: "Observing the night sky for leisure or amateur astronomy."
+    outdoor_photography: "Outdoor photography, including landscape and general field photography."
+    outdoor_waiting: "Standing or waiting outdoors for a meaningful period."
+    outdoor_recreation: "General outdoor recreation without a more specific activity tag."
+  groups:
+    children: "Young children."
+    elderly: "Older adults."
+    new_or_returning_worker: "A worker who is new to hot work or returning after an extended absence."
+    pets: "A household pet, especially a dog being taken outdoors."
+  question_types:
+    safety_check: "Questions asking whether an activity is safe or advisable."
+    planning: "Questions about whether to proceed, postpone or prepare."
+    work_safety: "Questions about safe outdoor work conditions."
+    suitability: "Questions about whether conditions are suitable for an activity."
+    route_check: "Questions about whether a route or crossing should be attempted."
+  time_words:
+    today:
+      description: "Today, during the current local calendar day."
+      window: {day: today, start: "00:00", end: "24:00"}
+    morning:
+      description: "Morning, early in the local day."
+      window: {day: today, start: "06:00", end: "12:00"}
+    tonight:
+      description: "Tonight, after the daytime period."
+      window: {day: today, start: "18:00", end: "24:00"}
+    overnight:
+      description: "Overnight camping or outdoor exposure."
+      window: {day: today, start: "20:00", end: "24:00"}
+    tomorrow:
+      description: "Tomorrow, the next local calendar day."
+      window: {day: tomorrow, start: "00:00", end: "24:00"}
+
+sops:
+  - id: WA-01
+    title: "Dense-fog road visibility"
+    category: road_safety
+    severity: warning
+    priority: 60
+    applies_to:
+      activities: [road_driving]
+      groups: any
+      question_types: [safety_check, planning]
+    requires:
+      - {field: visibility, source: current}
+      - {field: weather_code, source: current}
+    condition:
+      all:
+        - {compare: {field: weather_code, source: current, op: in, value: [45, 48], as: weather_code}}
+        - {compare: {field: visibility, source: current, op: "<=", value: 500, as: visibility_m}}
+    advice: "Visibility is {visibility_m} m in fog, so driving conditions are poor; slow down, use low-beam headlights, increase following distance and delay non-essential travel when practical."
+    rationale: "Built from NWS Driving in Fog guidance: the hazard is impaired visibility, with operational actions for speed, lighting and spacing. The 500 m boundary is a prototype policy limit, not an NWS universal cutoff."
+    edge_cases:
+      - "Boundary: 500 m is inclusive; 500.1 m does not trigger this policy."
+      - "Missing data: null or absent visibility/weather code makes this SOP UNKNOWN, never FALSE."
+      - "Overlap: a higher-priority road-hazard SOP may lead if another distinct hazard is simultaneously active."
+      - "Vocabulary: road-driving language must map to road_driving; the policy does not infer an activity from location alone."
+    # Design/source: Borrowed the hazard-to-action sequence from NWS Driving in Fog (https://www.weather.gov/safety/fog-driving); Open-Meteo supplies visibility and WMO weather codes.
+    # Advantage/shortcoming/alternative: Advantage—uses the actual exposure variable; shortcoming—modelled visibility can differ from roadside observation; alternative—use an official dense-fog warning feed.
+
+  - id: WA-02
+    title: "Snow-squall road disruption"
+    category: road_safety
+    severity: critical
+    priority: 80
+    applies_to:
+      activities: [road_travel]
+      groups: any
+      question_types: [safety_check, planning]
+    requires:
+      - {field: weather_code, source: current}
+      - {field: visibility, source: current}
+      - {field: wind_gusts_10m, source: current}
+    condition:
+      all:
+        - {compare: {field: weather_code, source: current, op: in, value: [71, 73, 75, 85, 86], as: weather_code}}
+        - {compare: {field: visibility, source: current, op: "<=", value: 800, as: visibility_m}}
+        - {compare: {field: wind_gusts_10m, source: current, op: ">=", value: 40, as: gust_kmh}}
+    advice: "A snow burst is accompanied by visibility of {visibility_m} m and gusts of {gust_kmh} km/h; delay road travel until conditions improve."
+    rationale: "Uses the NWS snow-squall concept—brief heavy snow plus abrupt visibility/road deterioration—while turning it into a deterministic three-signal prototype policy. The 800 m and 40 km/h values are prototype thresholds."
+    edge_cases:
+      - "Boundary: visibility 800 m and gust 40 km/h are included."
+      - "Missing data: any missing required signal makes the all-condition UNKNOWN."
+      - "Overlap: if WA-01 is also true, the more specific snow-squall policy leads by priority."
+      - "Vocabulary: only road-travel questions qualify; walking or sport questions do not."
+    # Design/source: Borrowed the multi-signal snow-squall hazard model from NWS Snow Squall safety (https://www.weather.gov/ctp/snowsquall); Open-Meteo provides weather code, visibility and gusts.
+    # Advantage/shortcoming/alternative: Advantage—captures sudden combined deterioration; shortcoming—the model may not identify every official snow squall; alternative—consume an official Snow Squall Warning feed.
+
+  - id: WA-03
+    title: "Freezing-precipitation road icing"
+    category: road_safety
+    severity: warning
+    priority: 70
+    applies_to:
+      activities: [road_driving]
+      groups: any
+      question_types: [safety_check, planning]
+    requires:
+      - {field: weather_code, source: current}
+      - {field: temperature_2m, source: current}
+    condition:
+      all:
+        - {compare: {field: weather_code, source: current, op: in, value: [56, 57, 66, 67], as: weather_code}}
+        - {compare: {field: temperature_2m, source: current, op: "<=", value: 0, as: temp_c}}
+    advice: "The air temperature is {temp_c} C and the weather code indicates freezing precipitation; postpone non-essential driving or use extreme caution because surfaces may ice."
+    rationale: "The rule separates freezing precipitation from ordinary rain and uses temperature as a confirming signal. The weather codes follow the WMO code mapping used by Open-Meteo."
+    edge_cases:
+      - "Boundary: 0 C is included."
+      - "Missing data: if either the precipitation type code or temperature is unavailable, the policy is UNKNOWN."
+      - "Overlap: road-fog and snow-squall rules remain independently evaluable when their own evidence is present."
+      - "Vocabulary: applies to road driving only; it does not claim that every outdoor activity is affected equally."
+    # Design/source: Borrowed the surface-icing mechanism from NWS winter-driving guidance (https://www.weather.gov/wrn/winter-driving-sm) and WMO precipitation-type coding via Open-Meteo.
+    # Advantage/shortcoming/alternative: Advantage—targets the actual icing mechanism; shortcoming—air temperature is not road-surface temperature; alternative—use road-surface observations or transport-agency icing alerts.
+
+  - id: WA-04
+    title: "Hail exposure at field sports"
+    category: outdoor_sports
+    severity: critical
+    priority: 90
+    applies_to:
+      activities: [field_sport]
+      groups: any
+      question_types: [safety_check, planning]
+    requires:
+      - {field: weather_code, source: current}
+    condition:
+      compare: {field: weather_code, source: current, op: in, value: [96, 99], as: weather_code}
+    advice: "The current weather code indicates hail during a thunderstorm; suspend field play and move participants to substantial shelter until the hail threat has ended."
+    rationale: "Designed around the physical-impact exposure of hail on open-field participants rather than using a generic thunderstorm rule. Open-Meteo follows WMO weather interpretation codes; NWS outdoor-sport guidance emphasizes stopping activity and sheltering for severe convective hazards."
+    edge_cases:
+      - "Boundary: the policy is code-based rather than size-based because the selected API does not supply hailstone diameter."
+      - "Missing data: missing weather_code is UNKNOWN."
+      - "Overlap: the situational convective-event override WA-20 may supersede this policy when its combined signals are present."
+      - "Vocabulary: applies only to open-field sports; spectators or indoor events need their own exposure classification."
+    # Design/source: Borrowed the hail-as-physical-exposure idea from NWS severe-weather and outdoor-sport safety plus WMO weather codes; no assignment-example threshold is reused.
+    # Advantage/shortcoming/alternative: Advantage—directly maps hazard to participants; shortcoming—code does not expose hail size; alternative—use an official local severe-hail warning with expected hail size.
+
+  - id: WA-05
+    title: "Rapid snowfall during a mountain trek"
+    category: mountain_recreation
+    severity: warning
+    priority: 55
+    applies_to:
+      activities: [mountain_trek]
+      groups: any
+      question_types: [safety_check, planning, route_check]
+    requires:
+      - {field: snowfall, source: hourly}
+    condition:
+      window_agg:
+        field: snowfall
+        agg: sum
+        window: {from_time_reference: true}
+        op: ">="
+        value: 5
+        as: snow_cm
+    advice: "The selected trek window contains about {snow_cm} cm of forecast snowfall; reconsider exposed mountain travel and verify current route conditions before proceeding."
+    rationale: "Uses accumulation during the user's requested window instead of existing snow depth, because fresh accumulation can change route conditions while a trek is underway. The 5 cm threshold is a prototype trigger."
+    edge_cases:
+      - "Boundary: 5 cm is included."
+      - "Missing data: any missing hour in the requested snowfall window makes the result UNKNOWN."
+      - "Overlap: existing snow depth is intentionally handled by WA-06 rather than this rule."
+      - "Vocabulary: route_check and mountain_trek must be supplied by the intent parser; no location-only inference is used."
+    # Design/source: Borrowed the distinction between hourly snowfall and ground snow depth from Open-Meteo's documented variables; the action framing follows WMO impact-based exposure logic.
+    # Advantage/shortcoming/alternative: Advantage—looks at fresh accumulation during exposure; shortcoming—does not know slope or avalanche conditions; alternative—combine route-specific snowpack and avalanche advisories.
+
+  - id: WA-06
+    title: "Established snow depth on a trail"
+    category: winter_recreation
+    severity: advisory
+    priority: 40
+    applies_to:
+      activities: [snow_trail]
+      groups: any
+      question_types: [planning, route_check]
+    requires:
+      - {field: snow_depth, source: current}
+    condition:
+      compare: {field: snow_depth, source: current, op: ">=", value: 0.2, as: snow_depth_m}
+    advice: "Snow depth is {snow_depth_m} m on the ground; confirm trail conditions and equipment suitability before attempting the route."
+    rationale: "This policy is about existing ground accumulation, deliberately separated from the fresh-snowfall rule. The 0.2 m threshold is a prototype route-planning boundary, not a universal trail-closure standard."
+    edge_cases:
+      - "Boundary: 0.2 m is included."
+      - "Missing data: missing snow_depth is UNKNOWN."
+      - "Overlap: fresh snowfall WA-05 can also be true, but WA-06 remains an existing-surface condition."
+      - "Vocabulary: snow_trail is explicit so ordinary hiking in dry conditions does not trigger it."
+    # Design/source: Borrowed the data separation between snow depth and snowfall from Open-Meteo; impact framing follows WMO's hazard/exposure model.
+    # Advantage/shortcoming/alternative: Advantage—distinguishes existing surface state from new snow; shortcoming—depth alone says little about ice or avalanche risk; alternative—use local trail-condition and avalanche systems.
+
+  - id: WA-07
+    title: "Cold overnight camping exposure"
+    category: camping
+    severity: warning
+    priority: 50
+    applies_to:
+      activities: [camping]
+      groups: any
+      question_types: [safety_check, planning]
+    requires:
+      - {field: apparent_temperature, source: hourly}
+    condition:
+      window_agg:
+        field: apparent_temperature
+        agg: min
+        window: {from_time_reference: true}
+        op: "<="
+        value: 5
+        as: apparent_min_c
+    advice: "The overnight window reaches an apparent temperature of {apparent_min_c} C; use appropriate cold-weather shelter and insulation, or reconsider exposed camping if adequate equipment is unavailable."
+    rationale: "Camping creates prolonged low-activity exposure, so the rule evaluates the minimum apparent temperature in the user's selected overnight window rather than a current point value. The 5 C trigger is a prototype policy threshold."
+    edge_cases:
+      - "Boundary: 5 C is included."
+      - "Missing data: missing any hourly value in the selected window makes the policy UNKNOWN."
+      - "Overlap: this rule is about overnight camping exposure, not a general cold policy for all recreation."
+      - "Vocabulary: the overnight time word supplies the evaluation window when selected by the user."
+    # Design/source: Borrowed NWS cold-exposure protection concepts (https://www.weather.gov/safety/cold) and Open-Meteo apparent-temperature data; no assignment sample is reused.
+    # Advantage/shortcoming/alternative: Advantage—accounts for prolonged camping exposure; shortcoming—cannot assess sleeping-bag or tent performance; alternative—ask for equipment rating and compare against route conditions.
+
+  - id: WA-08
+    title: "Frost-sensitive garden protection"
+    category: gardening
+    severity: advisory
+    priority: 35
+    applies_to:
+      activities: [gardening]
+      groups: any
+      question_types: [planning, safety_check]
+    requires:
+      - {field: temperature_2m_min, source: daily}
+    condition:
+      compare: {field: temperature_2m_min, source: daily, day: today, op: "<=", value: 2, as: min_temp_c}
+    advice: "Today's forecast minimum is {min_temp_c} C; protect frost-sensitive plants or move delicate plants to a sheltered location."
+    rationale: "The exposed object is vegetation, so the policy uses the forecast daily minimum rather than a human activity threshold. The 2 C value is a prototype garden-protection trigger."
+    edge_cases:
+      - "Boundary: 2 C is included."
+      - "Missing data: unavailable daily minimum yields UNKNOWN."
+      - "Overlap: the policy is intentionally unrelated to human cold-exposure rules."
+      - "Vocabulary: gardening must be explicit; the bot does not infer plant exposure from a generic outdoor question."
+    # Design/source: Borrowed the frost/freeze-to-plant-impact concept from National Weather Service frost/freeze guidance and the daily minimum-temperature variable from Open-Meteo.
+    # Advantage/shortcoming/alternative: Advantage—protects a different exposed population/object; shortcoming—plant species have very different cold tolerances; alternative—use species-specific horticultural thresholds.
+
+  - id: WA-09
+    title: "Outdoor work under high wet-bulb conditions"
+    category: occupational_heat
+    severity: warning
+    priority: 65
+    applies_to:
+      activities: [outdoor_manual_work]
+      groups: any
+      question_types: [work_safety, planning]
+    requires:
+      - {field: wet_bulb_temperature_2m, source: current}
+    condition:
+      compare: {field: wet_bulb_temperature_2m, source: current, op: ">=", value: 28, as: wet_bulb_c}
+    advice: "The wet-bulb temperature is {wet_bulb_c} C; reduce heat exposure by using cooler recovery areas, water/rest opportunities and a more conservative work schedule."
+    rationale: "Designed around OSHA's use of heat-stress controls and the meteorological value of wet-bulb temperature. The 28 C trigger is a prototype warning boundary and is not being presented as an OSHA legal limit."
+    edge_cases:
+      - "Boundary: 28 C is included."
+      - "Missing data: missing wet-bulb temperature yields UNKNOWN."
+      - "Overlap: worker-acclimatization WA-10 is a separate vulnerability rule and may also apply."
+      - "Vocabulary: outdoor_manual_work must be explicitly identified as work, not ordinary exercise."
+    # Design/source: Borrowed the heat-stress control framework from OSHA heat guidance (https://www.osha.gov/heat-exposure/controls) and the wet-bulb variable from Open-Meteo.
+    # Advantage/shortcoming/alternative: Advantage—uses a heat-stress-relevant derived variable; shortcoming—wet-bulb is not WBGT; alternative—use measured WBGT and an occupational heat plan.
+
+  - id: WA-10
+    title: "New or returning worker acclimatization"
+    category: occupational_heat
+    severity: warning
+    priority: 75
+    applies_to:
+      activities: [outdoor_manual_work]
+      groups: [new_or_returning_worker]
+      question_types: [work_safety, planning]
+    requires:
+      - {field: apparent_temperature, source: current}
+    condition:
+      compare: {field: apparent_temperature, source: current, op: ">=", value: 30, as: apparent_c}
+    advice: "Apparent temperature is {apparent_c} C for a new or returning worker; use shorter initial exposure, more frequent recovery breaks and gradual heat acclimatization."
+    rationale: "The policy adds vulnerability/exposure context rather than creating another generic heat threshold. OSHA specifically recommends gradual acclimatization and shorter work periods for new and returning workers. The 30 C trigger is a prototype activation threshold."
+    edge_cases:
+      - "Boundary: 30 C is included."
+      - "Missing data: missing apparent temperature yields UNKNOWN."
+      - "Overlap: WA-09 may also be true; WA-10 adds worker vulnerability rather than replacing the environmental rule."
+      - "Vocabulary: the worker group must be explicitly identified; the system must not guess acclimatization status."
+    # Design/source: Borrowed the exposure-vulnerability idea from OSHA's new/returning-worker acclimatization guidance (https://www.osha.gov/heat-exposure/protecting-new-workers).
+    # Advantage/shortcoming/alternative: Advantage—captures vulnerability that weather alone cannot express; shortcoming—status is self-reported and imperfect; alternative—use a workplace acclimatization record and heat plan.
+
+  - id: WA-11
+    title: "Hot pavement for pet walking"
+    category: pet_safety
+    severity: warning
+    priority: 55
+    applies_to:
+      activities: [pet_walk]
+      groups: [pets]
+      question_types: [safety_check, planning]
+    requires:
+      - {field: surface_temperature, source: current}
+    condition:
+      compare: {field: surface_temperature, source: current, op: ">=", value: 45, as: surface_c}
+    advice: "The surface temperature is {surface_c} C; avoid prolonged pet walking on exposed pavement and move the outing to a cooler period or cooler surface."
+    rationale: "The exposed surface is the animal's paws, so surface temperature is more relevant than using only air temperature. The 45 C activation point is a prototype threshold rather than a universal veterinary limit."
+    edge_cases:
+      - "Boundary: 45 C is included."
+      - "Missing data: missing surface temperature yields UNKNOWN."
+      - "Overlap: heat-oriented pet policies would remain distinct from direct-pavement exposure."
+      - "Vocabulary: requires both a pet group and pet-walk activity so the bot does not infer animal exposure."
+    # Design/source: Borrowed the hot-pavement/paw-burn mechanism from NWS pet heat-safety material and the surface-temperature variable from Open-Meteo.
+    # Advantage/shortcoming/alternative: Advantage—targets a concrete exposure pathway; shortcoming—modelled surface temperature may differ from actual pavement; alternative—use pavement sensors or local surface observations.
+
+  - id: WA-12
+    title: "Snow and treated surfaces for pet walking"
+    category: pet_safety
+    severity: advisory
+    priority: 45
+    applies_to:
+      activities: [pet_walk]
+      groups: [pets]
+      question_types: [planning, safety_check]
+    requires:
+      - {field: snow_depth, source: current}
+      - {field: weather_code, source: current}
+    condition:
+      all:
+        - {compare: {field: snow_depth, source: current, op: ">=", value: 0.02, as: snow_depth_m}}
+        - {compare: {field: weather_code, source: current, op: in, value: [71, 73, 75, 85, 86], as: snow_code}}
+    advice: "There is {snow_depth_m} m of snow on the ground with a snowing condition; keep the pet controlled, limit prolonged exposure and clean paws after returning indoors."
+    rationale: "Separates winter ground/contact hazards for pets from heat exposure. The weather-state requirement prevents snow depth alone from triggering after conditions have already changed."
+    edge_cases:
+      - "Boundary: 0.02 m snow depth is included."
+      - "Missing data: either snow_depth or weather_code unavailable makes this SOP UNKNOWN."
+      - "Overlap: WA-11 concerns hot pavement and cannot be assumed active from this rule."
+      - "Vocabulary: applies only when the user is asking about a pet walk."
+    # Design/source: Borrowed the winter paw/contact-risk concept from NWS pet winter-safety guidance and Open-Meteo snow-depth/WMO weather-code data.
+    # Advantage/shortcoming/alternative: Advantage—captures animal-ground exposure rather than air temperature; shortcoming—cannot know salt/chemicals or ice severity; alternative—use route-surface and municipal treatment data.
+
+  - id: WA-13
+    title: "Cold outdoor waiting for children"
+    category: vulnerable_groups
+    severity: warning
+    priority: 70
+    applies_to:
+      activities: [outdoor_waiting]
+      groups: [children]
+      question_types: [safety_check, planning]
+    requires:
+      - {field: apparent_temperature, source: current}
+    condition:
+      compare: {field: apparent_temperature, source: current, op: "<=", value: 8, as: apparent_c}
+    advice: "The apparent temperature is {apparent_c} C; shorten the child's outdoor waiting time and provide access to a warmer sheltered location."
+    rationale: "This combines a weather condition with a defined vulnerability and prolonged low-activity exposure. The 8 C trigger is a prototype design boundary, not a universal pediatric standard."
+    edge_cases:
+      - "Boundary: 8 C is included."
+      - "Missing data: missing apparent temperature yields UNKNOWN."
+      - "Overlap: the policy does not cover active children's sports or general cold recreation."
+      - "Vocabulary: children and outdoor_waiting must both be explicit."
+    # Design/source: Borrowed the vulnerable-population concept from NWS cold-safety guidance for children and the apparent-temperature variable from Open-Meteo.
+    # Advantage/shortcoming/alternative: Advantage—adds exposure duration and vulnerability; shortcoming—clothing and acclimatization are unknown; alternative—use age/duration-specific public-health guidance.
+
+  - id: WA-14
+    title: "Cold recreation for older adults"
+    category: vulnerable_groups
+    severity: warning
+    priority: 72
+    applies_to:
+      activities: [outdoor_recreation]
+      groups: [elderly]
+      question_types: [safety_check, planning]
+    requires:
+      - {field: apparent_temperature, source: current}
+    condition:
+      compare: {field: apparent_temperature, source: current, op: "<=", value: 5, as: apparent_c}
+    advice: "The apparent temperature is {apparent_c} C; prefer a shorter outing or a warmer time and ensure adequate cold protection for the older adult."
+    rationale: "This is a vulnerability-specific policy, not a general cold threshold. NWS identifies older adults as a population requiring particular care in cold conditions; the 5 C trigger is a prototype activation boundary."
+    edge_cases:
+      - "Boundary: 5 C is included."
+      - "Missing data: missing apparent temperature yields UNKNOWN."
+      - "Overlap: children's waiting and camping policies target different exposures and remain separate."
+      - "Vocabulary: elderly must be explicit; the system does not infer age from the wording alone unless the parser provides the group tag."
+    # Design/source: Borrowed the older-adult vulnerability framing from NWS cold-weather guidance and Open-Meteo apparent-temperature data.
+    # Advantage/shortcoming/alternative: Advantage—ties weather to vulnerability; shortcoming—age alone cannot establish individual cold tolerance; alternative—use local public-health cold advisories with demographic guidance.
+
+  - id: WA-15
+    title: "Outdoor electrical work during wet conditions"
+    category: electrical_safety
+    severity: critical
+    priority: 95
+    applies_to:
+      activities: [outdoor_electrical_work]
+      groups: any
+      question_types: [work_safety, safety_check]
+    requires:
+      - {field: precipitation, source: current}
+    condition:
+      compare: {field: precipitation, source: current, op: ">", value: 0, as: precipitation_mm}
+    advice: "Current precipitation is {precipitation_mm} mm; stop exposed electrical work unless the equipment and installation are specifically approved and controlled for wet conditions."
+    rationale: "The hazard is electrical exposure in wet conditions, not merely rain inconvenience. OSHA electrical standards require equipment and connections in wet/damp locations to be suitable for those conditions."
+    edge_cases:
+      - "Boundary: any positive current precipitation triggers the policy."
+      - "Missing data: unavailable precipitation makes the policy UNKNOWN."
+      - "Overlap: this rule is activity-specific and must not generalize to all outdoor work."
+      - "Vocabulary: outdoor_electrical_work must be explicitly identified by the parser."
+    # Design/source: Borrowed the wet-location electrical-safety principle from OSHA electrical standards (https://www.osha.gov/electrical/hazards/flexible-cords and 29 CFR 1910.305/1926.405); Open-Meteo supplies precipitation.
+    # Advantage/shortcoming/alternative: Advantage—clear consequence-driven policy; shortcoming—API cannot know equipment ratings or protective controls; alternative—require equipment/GFCI/weatherproofing status as additional evidence.
+
+  - id: WA-16
+    title: "Temporary outdoor structures in strong gusts"
+    category: event_operations
+    severity: warning
+    priority: 68
+    applies_to:
+      activities: [temporary_outdoor_structure]
+      groups: any
+      question_types: [safety_check, planning, work_safety]
+    requires:
+      - {field: wind_gusts_10m, source: current}
+    condition:
+      compare: {field: wind_gusts_10m, source: current, op: ">=", value: 45, as: gust_kmh}
+    advice: "Wind gusts are {gust_kmh} km/h; secure, lower or remove temporary outdoor structures and stop setup until the structure is confirmed stable for the conditions."
+    rationale: "Targets loose/temporary structures rather than people riding or exercising. The 45 km/h trigger is a prototype operational threshold."
+    edge_cases:
+      - "Boundary: 45 km/h is included."
+      - "Missing data: missing gust data yields UNKNOWN."
+      - "Overlap: the severe convective override WA-20 may lead if the broader event condition is active."
+      - "Vocabulary: temporary structure covers tents/canopies/inflatables; permanent buildings are outside this SOP."
+    # Design/source: Borrowed the high-wind loose-object/structure impact model from NWS Wind Hazards (https://www.weather.gov/safety/wind-hazards); the activity exposure is deliberately different from the assignment's cycling example.
+    # Advantage/shortcoming/alternative: Advantage—maps gust exposure to a specific temporary asset; shortcoming—does not know anchoring/design load; alternative—use manufacturer wind ratings and site inspection.
+
+  - id: WA-17
+    title: "Rain-driven runoff for a stream crossing"
+    category: wilderness_routes
+    severity: critical
+    priority: 88
+    applies_to:
+      activities: [stream_crossing]
+      groups: any
+      question_types: [route_check, safety_check]
+    # Review fix: this SOP originally required `surface_runoff`, which is NOT a real Open-Meteo forecast
+    # variable (the live API rejects it with HTTP 400). Because required_fields() unions every SOP's fields
+    # into one forecast request, that single bad field broke weather retrieval for EVERY live query; only the
+    # FixtureClient (canned JSON) hid it. Rainfall accumulation over the user's window is a valid, documented
+    # Open-Meteo variable and a defensible runoff proxy, so the policy intent is preserved on real data.
+    requires:
+      - {field: precipitation, source: hourly}
+    condition:
+      window_agg:
+        field: precipitation
+        agg: sum
+        window: {from_time_reference: true}
+        op: ">="
+        value: 10
+        as: rain_mm
+    advice: "About {rain_mm} mm of rain falls across the selected window, enough to raise stream flow and runoff; do not attempt the crossing without current, route-specific information about water depth and flow."
+    rationale: "Uses accumulated rainfall as a runoff proxy that triggers verification rather than pretending the weather API knows the river level. The 10 mm prototype threshold identifies conditions worth escalating to route-specific evidence."
+    edge_cases:
+      - "Boundary: a 10 mm window total is included."
+      - "Missing data: any missing hour in the requested precipitation window yields UNKNOWN."
+      - "Overlap: this policy is about a crossing exposure, not a general flood declaration."
+      - "Vocabulary: stream_crossing must be explicit; ordinary hiking does not trigger it."
+    # Design/source: Borrowed the rainfall-to-runoff-to-water-crossing reasoning from hydrologic hazard practice; Open-Meteo exposes hourly precipitation, while NWS flood safety emphasizes not entering unknown flowing/flooded water.
+    # Advantage/shortcoming/alternative: Advantage—uses a real, available signal; shortcoming—accumulated rain is only a proxy for actual flow; alternative—use gauge/streamflow/depth observations or official flood alerts.
+
+  - id: WA-18
+    title: "Clear-night stargazing suitability"
+    category: leisure_suitability
+    severity: advisory
+    priority: 25
+    applies_to:
+      activities: [stargazing]
+      groups: any
+      question_types: [suitability, planning]
+    requires:
+      - {field: is_day, source: current}
+      - {field: cloud_cover, source: current}
+      - {field: precipitation, source: current}
+      - {field: visibility, source: current}
+    condition:
+      all:
+        - {compare: {field: is_day, source: current, op: "==", value: 0, as: day_flag}}
+        - {compare: {field: cloud_cover, source: current, op: "<=", value: 25, as: cloud_pct}}
+        - {compare: {field: precipitation, source: current, op: "==", value: 0, as: precipitation_mm}}
+        - {compare: {field: visibility, source: current, op: ">=", value: 10000, as: visibility_m}}
+    advice: "It is nighttime with {cloud_pct}% cloud cover, {visibility_m} m visibility and {precipitation_mm} mm current precipitation; conditions are broadly suitable for stargazing."
+    rationale: "This is a suitability rule, not a safety warning. It demonstrates that SOP severity can be advisory when the policy simply identifies favorable environmental conditions."
+    edge_cases:
+      - "Boundary: cloud cover 25%, zero precipitation, and visibility 10 km are included."
+      - "Missing data: any missing required field makes the all-condition UNKNOWN."
+      - "Overlap: a separate safety SOP can still lead if a hazard relevant to outdoor presence is active."
+      - "Vocabulary: suitability questions about stargazing must map to stargazing rather than generic recreation."
+    # Design/source: Borrowed the multi-variable suitability pattern from the assignment's required fuzzy/suitability concept and Open-Meteo cloud, precipitation, visibility and day/night fields.
+    # Advantage/shortcoming/alternative: Advantage—shows low-severity positive guidance; shortcoming—does not model moonlight or astronomical seeing; alternative—use astronomy-specific transparency/seeing forecasts.
+
+  - id: WA-19
+    title: "Fuzzy outdoor-photography suitability"
+    category: leisure_suitability
+    severity: advisory
+    priority: 20
+    applies_to:
+      activities: [outdoor_photography]
+      groups: any
+      question_types: [suitability, planning]
+    requires:
+      - {field: visibility, source: current}
+      - {field: cloud_cover, source: current}
+      - {field: precipitation, source: current}
+      - {field: wind_speed_10m, source: current}
+    condition:
+      score:
+        as: photo
+        terms:
+          - field: visibility
+            source: current
+            as: visibility
+            weight: 1
+            bands:
+              - {op: ">=", value: 10000, points: 1}
+              - {op: ">=", value: 5000, points: 0.5}
+            default_points: 0.2
+          - field: cloud_cover
+            source: current
+            as: cloud
+            weight: 1
+            bands:
+              - {op: "<=", value: 20, points: 0.7}
+              - {op: "<=", value: 70, points: 1}
+              - {op: "<=", value: 90, points: 0.6}
+            default_points: 0.2
+          - field: precipitation
+            source: current
+            as: precipitation
+            weight: 1
+            bands:
+              - {op: "==", value: 0, points: 1}
+              - {op: "<=", value: 0.5, points: 0.5}
+            default_points: 0
+          - field: wind_speed_10m
+            source: current
+            as: wind
+            weight: 1
+            bands:
+              - {op: "<=", value: 15, points: 1}
+              - {op: "<=", value: 30, points: 0.6}
+            default_points: 0.2
+        match: {op: ">=", value: 0.65}
+        labels:
+          - {op: ">=", value: 0.85, label: "excellent"}
+          - {op: ">=", value: 0.65, label: "favorable"}
+          - {op: ">=", value: 0.5, label: "mixed"}
+          - {op: "<", value: 0.5, label: "poor"}
+    advice: "Outdoor-photography conditions have a deterministic score of {photo_value} and are rated {photo_label}; the score uses {visibility} m visibility, {cloud}% cloud cover, {precipitation} mm precipitation and {wind} km/h wind."
+    rationale: "This is the required fuzzy/non-numeric design, but uses photography rather than the assignment's picnic example. The score combines several observable factors with explicit weights so the LLM does not invent a subjective judgement."
+    edge_cases:
+      - "Boundary: a score of 0.65 is TRUE; the label bands are first-match in descending order."
+      - "Missing data: any unknown term makes the score UNKNOWN, so the bot does not invent a suitability result."
+      - "Overlap: this advisory should not override a true safety policy; safety rules are evaluated first by severity/override."
+      - "Vocabulary: photography intent is explicit; the model cannot silently repurpose this rule for other leisure activities."
+    # Design/source: Borrowed the deterministic weighted-score pattern from the assignment's fuzzy-SOP requirement and the evaluator's score design; weather inputs come from documented Open-Meteo variables.
+    # Advantage/shortcoming/alternative: Advantage—handles a genuinely fuzzy suitability question transparently; shortcoming—weights are policy choices and need validation; alternative—learn preferences from labeled examples while keeping hard safety policies deterministic.
+
+  - id: WA-20
+    title: "Composite convective-event override for outdoor gatherings"
+    category: situational_weather
+    severity: critical
+    priority: 5
+    override: true
+    applies_to:
+      activities: any
+      groups: any
+      # Review fix: this is the "treat every outdoor-activity question as high severity
+      # regardless of category" override. It previously listed only three question_types, so
+      # work_safety and route_check questions (e.g. "should I attempt this crossing?" during a
+      # thunderstorm) escaped the override. `any` makes the override cover every outdoor-activity
+      # question, as the policy intends; no control-flow code changed.
+      question_types: any
+    requires:
+      - {field: weather_code, source: current}
+      - {field: wind_gusts_10m, source: current}
+      - {field: precipitation, source: current}
+    condition:
+      all:
+        - {compare: {field: weather_code, source: current, op: in, value: [95, 96, 97, 99], as: storm_code}}
+        - any:
+            - compare:
+                field: wind_gusts_10m
+                source: current
+                op: ">="
+                value: 45
+                as: gust_kmh
+            - compare:
+                field: precipitation
+                source: current
+                op: ">="
+                value: 5
+                as: precipitation_mm
+    advice: "A thunderstorm-type condition (weather code {storm_code}) is active together with an elevated wind or precipitation signal; suspend the outdoor plan and move people to substantial shelter."
+    rationale: "This is the deliberately broader multi-signal policy required by the assignment, but it does NOT copy the assignment's low-pressure/cyclonic heavy-rain example. It combines a convective weather state with an independently elevated impact signal and is marked override so it leads over narrower activity rules. The 45 km/h and 5 mm values are prototype thresholds."
+    edge_cases:
+      - "Boundary: gust 45 km/h or precipitation 5 mm satisfies the second branch; both are inclusive."
+      - "Missing data: if the storm code is known but both secondary impact signals are unavailable, the policy is UNKNOWN rather than TRUE."
+      - "Overlap: override=true intentionally makes this policy primary when TRUE; other TRUE policies become secondary."
+      - "Vocabulary: applies across all outdoor activities AND all question types, but only after the intent is classified as an in-scope outdoor weather question (out-of-scope messages never reach SOP matching)."
+    # Design/source: Borrowed the multi-hazard/impact-based reasoning pattern from WMO and the stop-and-shelter action from NWS lightning/outdoor-sport guidance (https://www.weather.gov/safety/lightning-sports), while deliberately avoiding the assignment's low-pressure/cyclonic example.
+    # Advantage/shortcoming/alternative: Advantage—captures combined convective risk that no single scalar threshold represents; shortcoming—weather code is modelled and not direct lightning detection; alternative—combine official thunderstorm/lightning alerts with local warning feeds.

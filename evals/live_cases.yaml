@@ -1,0 +1,21 @@
+# S2: the live severe-weather case (runs only with --suite user, real LLM, real Open-Meteo).
+# The runner tries `candidates` in order. For each city it fetches live weather and evaluates the SOPs named
+# in `severe_sop_ids` with the engine's own evaluator; the first city where one is TRUE is used for the full
+# question. If none is active the case is reported SKIPPED (never a pass). Nothing event-specific is in code.
+#
+# severe_sop_ids holds WA-20 only: it is the situational override (applies_to activities=any, question_types=any),
+# so whatever activity the LLM parses from the bike-ride question, WA-20 still applies and is matched in the full
+# run when its condition (a thunderstorm code with elevated gust or precipitation) is live. Activity-restricted
+# critical SOPs (e.g. WA-15 electrical, WA-17 stream crossing) are deliberately NOT listed: their condition can be
+# TRUE while applies_to excludes a cycling question, which would make the full-run match check fail rather than skip.
+candidates:
+  - Bhopal
+  - Mumbai
+  - Kolkata
+  - Chennai
+  - Guwahati
+  - Mangalore
+  - Thiruvananthapuram
+  - Miami
+severe_sop_ids: [WA-20]
+question: "Is it safe to go for a bike ride in {city} today?"
