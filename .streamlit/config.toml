@@ -1,0 +1,10 @@
+# Streamlit config committed for deployment (safe to share; no secrets here).
+# Secrets go in the Streamlit Cloud dashboard, not in this file. See .streamlit/secrets.toml.example.
+[server]
+headless = true
+
+[browser]
+gatherUsageStats = false
+
+[theme]
+base = "light"

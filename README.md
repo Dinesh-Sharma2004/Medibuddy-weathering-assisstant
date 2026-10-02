@@ -47,6 +47,9 @@ Use the dummy SOPs without your real file: `SOP_FILE=tests/fixtures/sops_fixture
 **How to talk to it:** see [`USECASES.md`](USECASES.md) — say it once (activity + city), then type only the delta
 (`tonight?`, `what about Delhi?`, `why?`); the session carries the rest forward.
 
+**Deploying:** see [`DEPLOY.md`](DEPLOY.md). This is a Streamlit server, so it needs a Python host
+(Streamlit Community Cloud is the one-click option) — not a static host like Netlify.
+
 **Tests:** `venv/bin/python -m pytest -q` (89 tests; no network, no LLM).
 **Evals:** `venv/bin/python evals/run_evals.py --suite fixture|user [--mode engine|e2e|all] [--runs 3] [--case ID]`.
 Fixture suite -> `evals/RESULTS.md`; user suite -> `evals/RESULTS_user.md`. Analysis in `evals/NOTES.md`.

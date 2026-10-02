@@ -1,8 +1,13 @@
-langgraph
-langchain-openai
-langchain-core
-streamlit
-pyyaml
-requests
-python-dotenv
-pytest
+# Runtime dependencies, pinned to the versions this project was built and tested against.
+# Streamlit Community Cloud installs these on deploy. Pick Python 3.12 in the app's Advanced settings.
+streamlit==1.64.0
+langgraph==1.2.12
+langchain-openai==1.6.7
+langchain-core==1.6.6
+pydantic==2.13.5
+pyyaml==6.0.3
+requests==2.34.2
+python-dotenv==1.2.4
+
+# Test-only (not needed to run the deployed app; kept so `pip install -r` sets up local testing too).
+pytest==9.1.1
