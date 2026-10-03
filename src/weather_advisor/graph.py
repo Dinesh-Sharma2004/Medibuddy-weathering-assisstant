@@ -21,7 +21,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
 
 from . import engine
-from .conditions import TRUE
+from .conditions import TRUE, fmt_number
 from .sops import DIMENSIONS, SOPError, SOPSet, validate_sops
 from .verify import _numbers, verify_advice, verify_reply
 from .weather import WeatherClient, build_snapshot, forecast_params
@@ -30,6 +30,8 @@ from .weather import WeatherClient, build_snapshot, forecast_params
 POLICY_ERROR_TEXT = "The advice policy file is currently invalid, so I can't answer safely right now."
 # Fixed control-flow wording for when the intent parser itself fails (no policy content).
 SYSTEM_ERROR_TEXT = "Sorry, I couldn't process your question just now. Please try again."
+# Control-flow lead-in for the deterministic 'reassure' outcome (no policy TRUE, but a relevant one was checked).
+REASSURE_TEXT = "No active policy flags a concern for that activity in the current conditions. Here is what I checked:"
 SESSION_KEYS = ("location_text", "activities", "groups", "question_types", "time_reference")
 
 
@@ -240,7 +242,34 @@ def build_graph(sop_path: str | Path, client: WeatherClient, parser: Parser,
 
     def route_resolution(state) -> str:
         o = state["resolution"]["outcome"]
-        return "compose" if o == "advice" else o
+        if o == "advice":
+            return "compose"
+        if o == "no_guidance" and engine.needs_group_clarification(policy(state), state["intent"]):
+            return "clarify"   # a group tag would unlock a SOP: ask rather than dead-end (deterministic)
+        return o   # reassure | data_unavailable | no_guidance
+
+    def reassure(state):
+        """Deterministic 'checked, no concern': a relevant SOP applies but its threshold is not met."""
+        pol, res = policy(state), state["resolution"]
+        by_id = {e["id"]: e for e in state["evals"]}
+        text, cited = render_reassure(res["reassure"], by_id)
+        place, time = state["place"]["label"], state["snapshot"]["now_local"]
+        entry = {"turn": len(state["decision_log"]) + 1, "outcome": "reassure", "primary": None, "secondary": [],
+                 "cited": cited, "location": place, "snapshot_time": time,
+                 "severities": {i: by_id[i]["severity"] for i in cited},
+                 "evidence": {k: v for i in cited for k, v in by_id[i]["evidence"].items()},
+                 "explanation": _explain_reassure(cited, by_id, place, time)}
+        return finish(state, "reassure", text, "template",
+                      state_updates={"decision_log": [*state["decision_log"], entry]}, reassured_sops=cited)
+
+    def clarify(state):
+        """Deterministic follow-up: the user named an activity but no vulnerable group, and a group-restricted
+        SOP for that activity exists. Ask which group applies instead of guessing or dead-ending."""
+        wanted = engine.needs_group_clarification(policy(state), state["intent"])
+        human = ", ".join(w.replace("_", " ") for w in wanted)
+        text = (f"To check the right policy, is this for any of: {human}? "
+                "Tell me and I'll check the policy that applies, or say it's none of these.")
+        return finish(state, "clarify", text, clarify_groups=wanted)
 
     def compose(state):
         draft = None
@@ -328,6 +357,15 @@ def build_graph(sop_path: str | Path, client: WeatherClient, parser: Parser,
                      "evidence": {k: v for i in res["matched"] for k, v in by_id[i]["evidence"].items()}}
             return finish(state, "advise", render_approved(approved), "fallback_template",
                           state_updates={"decision_log": [*state["decision_log"], entry]}, **tr_extra)
+        if res["outcome"] == "reassure":
+            text, cited = render_reassure(res["reassure"], by_id)
+            entry = {"turn": len(state["decision_log"]) + 1, "outcome": "reassure", "primary": None, "secondary": [],
+                     "cited": cited, "location": place["label"], "snapshot_time": snap["now_local"],
+                     "severities": {i: by_id[i]["severity"] for i in cited},
+                     "evidence": {k: v for i in cited for k, v in by_id[i]["evidence"].items()},
+                     "explanation": _explain_reassure(cited, by_id, place["label"], snap["now_local"])}
+            return finish(state, "reassure", text, "fallback_template",
+                          state_updates={"decision_log": [*state["decision_log"], entry]}, **tr_extra)
         name = "data_unavailable" if res["outcome"] == "data_unavailable" else "no_guidance"
         entry = {"turn": len(state["decision_log"]) + 1, "outcome": name, "primary": None, "secondary": [],
                  "location": place["label"], "snapshot_time": snap["now_local"], "severities": {}, "evidence": {},
@@ -376,16 +414,19 @@ def build_graph(sop_path: str | Path, client: WeatherClient, parser: Parser,
         g.add_node("advise", advise)
         always_end.append("advise")
     else:
-        # Deterministic path (unchanged): the reproducible engine-tier evals and unit tests exercise this.
+        # Deterministic path (default): code matches and picks the answer; the model only parses and rephrases.
+        # 'reassure' (relevant SOP checked but threshold not met) and 'clarify' (ask for a missing group) keep
+        # the conversation from dead-ending, both decided by code. This is what the eval suites exercise.
         for n in ("no_guidance", "data_unavailable"):
             g.add_node(n, terminal_logged(n))
         for n, f in (("match_sops", match_sops), ("resolve_conflicts", resolve_conflicts),
-                     ("compose", compose), ("verify", verify)):
+                     ("compose", compose), ("verify", verify), ("reassure", reassure), ("clarify", clarify)):
             g.add_node(n, f)
         g.add_edge("match_sops", "resolve_conflicts")
-        g.add_conditional_edges("resolve_conflicts", route_resolution, ["compose", "no_guidance", "data_unavailable"])
+        g.add_conditional_edges("resolve_conflicts", route_resolution,
+                                ["compose", "no_guidance", "data_unavailable", "reassure", "clarify"])
         g.add_edge("compose", "verify")
-        always_end += ["no_guidance", "data_unavailable", "verify"]
+        always_end += ["no_guidance", "data_unavailable", "verify", "reassure", "clarify"]
     for n in always_end:
         g.add_edge(n, END)
     return g.compile(checkpointer=checkpointer or MemorySaver())
@@ -400,6 +441,31 @@ def render_approved(a: dict) -> str:
         lines += [f"- [{s['id']}] {s['advice']}" for s in a["secondary"]]
     lines += a["disclosures"]
     return "\n".join(lines)
+
+
+def _reassure_line(rec: dict) -> str:
+    """One grounded line explaining why a relevant SOP did not trigger (field value vs threshold)."""
+    def isnum(v):
+        return isinstance(v, (int, float)) and not isinstance(v, bool)
+    nums = [t for t in rec["eval_trace"] if t.get("node") in ("compare", "window_agg")
+            and isnum(t.get("value")) and isnum(t.get("threshold"))]
+    show = [t for t in nums if t.get("result") == "FALSE"] or nums
+    parts = [f"{t['field']} is {fmt_number(t['value'])} (threshold {t['op']} {fmt_number(t['threshold'])})"
+             for t in show[:2]]
+    body = "; ".join(parts) if parts else "its condition was not met"
+    return f"- [{rec['id']}] {rec['title']}: {body}."
+
+
+def render_reassure(reassure_ids: list, by_id: dict) -> tuple[str, list]:
+    """Deterministic 'checked, no concern' reply citing the most relevant applicable-but-FALSE SOPs."""
+    cited = reassure_ids[:2]
+    return "\n".join([REASSURE_TEXT, *[_reassure_line(by_id[i]) for i in cited]]), cited
+
+
+def _explain_reassure(cited: list, by_id: dict, place: str, time: str) -> str:
+    parts = [f"{i} ({by_id[i]['title']})" for i in cited]
+    return (f"I did not flag a concern for {place} (weather as of {time} local); I checked "
+            f"{'; '.join(parts)} and their thresholds were not met.")
 
 
 def _explain_decision(action: str, cited: list, by_id: dict, place: str, time: str) -> str:

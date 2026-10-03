@@ -212,15 +212,19 @@ cases:
   # ---------------- boundary (WA-16 gust threshold, inclusive) ----------------
   - id: UB1
     tier: engine
-    what_it_checks: Threshold boundary for WA-16 (wind_gusts_10m >= 45). 45 matches; 44.9 does not.
-    pass_criteria: Turn 1 (gust 45) matches WA-16; turn 2 (gust 44.9) falls through to no_guidance.
+    what_it_checks: Threshold boundary for WA-16 (wind_gusts_10m >= 45). 45 flags a hazard; 44.9 does not.
+    pass_criteria: Turn 1 (gust 45) advises on WA-16; turn 2 (gust 44.9) reassures - checked WA-16, threshold not met.
     weather: u_gust45
     turns:
       - intent: {in_scope: true, location_text: Bhopal, activities: [temporary_outdoor_structure], question_types: [planning], time_reference: today}
         expect: {branch: compose, trace: {primary_sop: WA-16}, evaluations: {WA-16: "TRUE"}, reply_contains: [WA-16, "45"]}
       - weather: u_gust44
         intent: {in_scope: true, location_text: Bhopal, activities: [temporary_outdoor_structure], question_types: [planning], time_reference: today}
-        expect: {branch: no_guidance, trace: {matched_sops: [], primary_sop: null}, evaluations: {WA-16: "FALSE"}}
+        expect:
+          branch: reassure
+          trace: {matched_sops: [], primary_sop: null, reassured_sops: [WA-16]}
+          evaluations: {WA-16: "FALSE"}
+          reply_contains: [WA-16, "44.9"]
 
   # ---------------- UNKNOWN -> data_unavailable (never a silent guess) ----------------
   - id: UU1
@@ -239,15 +243,34 @@ cases:
           evaluations: {WA-15: "UNKNOWN"}
           reply_contains: ["could not be fully evaluated"]
 
-  # ---------------- no SOP applies (assignment) ----------------
+  # ---------------- relevant policy checked but not triggered -> reassure (no dead-end, no invented advice) ----------------
   - id: UN1
     tier: engine
-    what_it_checks: In-scope gardening question on a mild day - no SOP fires; the bot says so, no invented advice.
-    pass_criteria: Branch no_guidance; nothing matched; no compose call; no digits in the reply.
+    what_it_checks: Gardening on a mild day - the frost policy applies but its threshold is not met.
+    pass_criteria: Branch reassure; nothing matched (no hazard); no compose call; the reply cites WA-08 and the checked value, not invented advice.
     weather: u_calm
     turns:
       - intent: {in_scope: true, location_text: Bhopal, activities: [gardening], question_types: [planning], time_reference: today}
-        expect: {branch: no_guidance, trace: {matched_sops: [], primary_sop: null}, composer_calls: 0, no_digits: true}
+        expect:
+          branch: reassure
+          trace: {matched_sops: [], primary_sop: null, reassured_sops: [WA-08]}
+          evaluations: {WA-08: "FALSE"}
+          composer_calls: 0
+          reply_contains: [WA-08]
+
+  # ---------------- deterministic follow-up: a group tag would unlock a policy, so ask (never assume) ----------------
+  - id: UCLR
+    tier: engine
+    what_it_checks: An activity with only a group-restricted policy (outdoor_waiting -> WA-13 children) and no group stated.
+    pass_criteria: Branch clarify; the bot asks which group applies instead of guessing or dead-ending; no SOP matched.
+    weather: u_coldppl
+    turns:
+      - intent: {in_scope: true, location_text: Bhopal, activities: [outdoor_waiting], question_types: [safety_check], time_reference: today}
+        expect:
+          branch: clarify
+          trace: {matched_sops: []}
+          composer_calls: 0
+          reply_contains: ["children"]
 
   # ---------------- unreachable weather API (assignment) ----------------
   - id: UF1

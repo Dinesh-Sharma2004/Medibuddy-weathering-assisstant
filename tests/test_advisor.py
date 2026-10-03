@@ -104,11 +104,12 @@ def test_advise_node_clarify_returns_the_question():
 
 def test_advise_node_falls_back_when_guardrail_trips():
     snap = full_snapshot(current={"wind_speed_10m": 10})            # FX-WIND-01 is FALSE
-    # advisor wrongly claims a hazard on a FALSE SOP -> guardrail rejects -> deterministic fallback
+    # advisor wrongly claims a hazard on a FALSE SOP -> guardrail rejects -> deterministic fallback.
+    # The engine reassures (checked, threshold not met), never presents the FALSE SOP as a live hazard.
     r = ask(app_with(_coerce_decision(
         {"action": "advise", "lead_sop": "FX-WIND-01", "reply": "Danger! [FX-WIND-01]"}), snap), "t", "bike?")
     assert r["trace"].get("advisor_rejected") and r["reply_source"] == "fallback_template"
-    assert "FX-WIND-01" not in r["reply"]      # FALSE SOP is not cited as advice
+    assert r["branch"] == "reassure" and "threshold" in r["reply"].lower()
 
 
 def test_advise_node_fallback_on_advisor_exception():

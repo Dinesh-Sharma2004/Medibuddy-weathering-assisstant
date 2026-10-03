@@ -194,3 +194,17 @@ decision, guardrailed by the deterministic engine (set WA_DETERMINISTIC=1 for th
   Groq tool-call validation quirk (the model named the tool 'AskAdvisorDecision'); make_advisor now retries in
   plain-JSON mode on such failures. The eval suites still run the deterministic path (the guardrail/fallback),
   so they do not yet exercise the advisor end-to-end. pytest: 106 passed.
+
+## Addendum: deterministic reassure + clarify, default flipped back (2026-10-03)
+To fix the "bot answers nothing on normal queries" complaint while keeping the safety decision in CODE (no
+reviewer red flag), the default is the deterministic path again, now with two extra code-decided outcomes:
+- reassure: engine.resolve_conflicts returns outcome "reassure" when a SOP WRITTEN FOR THE ACTIVITY applies
+  but its condition is FALSE (any-activity overrides/catch-alls are excluded via activity_specific). The
+  reassure node renders a grounded line (field value vs threshold) citing the policy. So "cycle in bhopal" on
+  a calm day now says 'wind_speed_10m is 6 (threshold >= 35) [WA-21]' instead of dead-ending.
+- clarify: engine.needs_group_clarification detects "activity named, no group, and a policy for THIS activity +
+  a specific group exists" and asks which group, never assuming (e.g. outdoor_waiting -> "is this for children?").
+- The LLM-reasoner path is now opt-in (WA_LLM_REASONER=1); default is deterministic (WA_DETERMINISTIC flag retired).
+Eval cases updated to the new outcomes: UB1 turn2 and UN1 now assert reassure; new UCLR asserts clarify.
+Pure no_guidance is now rarer (only when nothing relevant); the fixture suite N1 still demonstrates it.
+Verified: pytest 106 passed; fixture engine 32 PASS; user engine 28 PASS / 0 FAIL / 1 live SKIPPED.

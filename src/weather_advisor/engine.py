@@ -45,6 +45,7 @@ def match_sops(policy: SOPSet, intent: dict, snapshot: dict) -> list[dict[str, A
         ok, why = applies(sop, intent)
         rec: dict[str, Any] = {"id": sop.id, "title": sop.title, "severity": sop.severity,
                                "priority": sop.priority, "override": sop.override,
+                               "activity_specific": sop.applies_to["activities"] != "any",
                                "applicable": ok, "applies_reason": why,
                                "result": None, "effective": None, "evidence": {}, "advice": None,
                                "render_blocked": None, "eval_trace": []}
@@ -94,7 +95,12 @@ def assess_all(policy: SOPSet, intent: dict, snapshot: dict) -> list[dict[str, A
 
 def resolve_conflicts(policy: SOPSet, evals: list[dict]) -> dict[str, Any]:
     """Decide outcome. Order: override SOPs first, then severity (high first), then priority (LARGER wins),
-    then SOP ID (ascending)."""
+    then SOP ID (ascending).
+
+    Outcomes: 'advice' (a relevant SOP is TRUE), 'data_unavailable' (a material SOP is UNKNOWN),
+    'reassure' (a relevant SOP applies but its threshold is not met - cite it and the checked value so the
+    bot does not dead-end), 'no_guidance' (nothing relevant). All decided by code, not the model.
+    """
     def key(e):
         return (not e["override"], -policy.severity_rank(e["severity"]), -e["priority"], e["id"])
 
@@ -103,12 +109,15 @@ def resolve_conflicts(policy: SOPSet, evals: list[dict]) -> dict[str, Any]:
     cutoff = policy.severity_rank(policy.meta["disclose_unknown_from"])
     unknown = [e for e in applicable if e["effective"] == UNKNOWN]
     disclosed = sorted((e for e in unknown if policy.severity_rank(e["severity"]) >= cutoff), key=key)
+    # Reassure only about a policy written for THIS activity, never an any-activity override/catch-all:
+    # "the cycling policy didn't trigger", not "the storm override didn't trigger".
+    false_app = sorted((e for e in applicable if e["effective"] == FALSE and e.get("activity_specific")), key=key)
     if true:
         outcome = "advice"
-    elif not applicable:
-        outcome = "no_guidance"
     elif disclosed:
         outcome = "data_unavailable"
+    elif false_app:
+        outcome = "reassure"
     else:
         outcome = "no_guidance"
     return {"outcome": outcome,
@@ -116,4 +125,20 @@ def resolve_conflicts(policy: SOPSet, evals: list[dict]) -> dict[str, Any]:
             "primary": true[0]["id"] if true else None,
             "secondary": [e["id"] for e in true[1:]],
             "unknown": [e["id"] for e in unknown],
-            "disclosed_unknown": [e["id"] for e in disclosed]}
+            "disclosed_unknown": [e["id"] for e in disclosed],
+            "reassure": [e["id"] for e in false_app]}
+
+
+def needs_group_clarification(policy: SOPSet, intent: dict) -> list[str]:
+    """When the user named an activity but no vulnerable group, and some SOP for that activity applies only to
+    a group (children/elderly/pets/worker), return those group tags so the bot can ASK (never assume) instead
+    of a flat 'no guidance'. Deterministic: this does not decide safety, it decides to ask a question."""
+    acts = set(intent.get("activities") or [])
+    if not acts or (intent.get("groups")):
+        return []
+    wanted: set[str] = set()
+    for sop in policy.sops:
+        a, g = sop.applies_to["activities"], sop.applies_to["groups"]
+        if g != "any" and a != "any" and acts & set(a):   # a policy written for THIS activity + a specific group
+            wanted |= set(g)
+    return sorted(wanted)

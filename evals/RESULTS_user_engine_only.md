@@ -1,10 +1,10 @@
 # Eval results (user suite)
 
-- Date: 2026-10-03T05:11:47
+- Date: 2026-10-03T05:36:53
 - Model: openai/gpt-oss-20b
-- Git SHA: 2525036
+- Git SHA: c5872ba
 - Mode: engine; LLM runs per case: 3 (a case passes only if all runs pass)
-- Summary: 27 PASS, 0 FAIL, 0 INFRA ERROR, 3 NOT RUN, 1 SKIPPED
+- Summary: 28 PASS, 0 FAIL, 0 INFRA ERROR, 3 NOT RUN, 1 SKIPPED
 
 | Case | Mode | Result |
 |---|---|---|
@@ -30,6 +30,7 @@
 | UB1 | engine | PASS |
 | UU1 | engine | PASS |
 | UN1 | engine | PASS |
+| UCLR | engine | PASS |
 | UF1 | engine | PASS |
 | UM1 | engine | PASS |
 | UP1 | llm | NOT RUN |
@@ -138,8 +139,8 @@
 
 ## UB1 [engine] - PASS
 
-- **What it checks:** Threshold boundary for WA-16 (wind_gusts_10m >= 45). 45 matches; 44.9 does not.
-- **Pass looks like:** Turn 1 (gust 45) matches WA-16; turn 2 (gust 44.9) falls through to no_guidance.
+- **What it checks:** Threshold boundary for WA-16 (wind_gusts_10m >= 45). 45 flags a hazard; 44.9 does not.
+- **Pass looks like:** Turn 1 (gust 45) advises on WA-16; turn 2 (gust 44.9) reassures - checked WA-16, threshold not met.
 
 ## UU1 [engine] - PASS
 
@@ -149,8 +150,13 @@
 
 ## UN1 [engine] - PASS
 
-- **What it checks:** In-scope gardening question on a mild day - no SOP fires; the bot says so, no invented advice.
-- **Pass looks like:** Branch no_guidance; nothing matched; no compose call; no digits in the reply.
+- **What it checks:** Gardening on a mild day - the frost policy applies but its threshold is not met.
+- **Pass looks like:** Branch reassure; nothing matched (no hazard); no compose call; the reply cites WA-08 and the checked value, not invented advice.
+
+## UCLR [engine] - PASS
+
+- **What it checks:** An activity with only a group-restricted policy (outdoor_waiting -> WA-13 children) and no group stated.
+- **Pass looks like:** Branch clarify; the bot asks which group applies instead of guessing or dead-ending; no SOP matched.
 
 ## UF1 [engine] - PASS
 

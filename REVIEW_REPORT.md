@@ -6,16 +6,16 @@ running the unit suite, running both eval suites (engine + LLM tiers), exercisin
 paths, and making one **live** Open-Meteo request. Fixes were applied, tested, and commented
 in-code; this report records what was found and what changed.
 
-> **Post-review architecture change (2026-10-03).** At the author's explicit direction, the DEFAULT
-> production path was changed to **LLM-reasoner + guardrails**: the model now decides which SOP is relevant
-> and how to frame the reply, while code evaluates every SOP's condition deterministically and a guardrail
-> (`verify_advice`) rejects any decision inconsistent with those results or any ungrounded number, falling
-> back to the pure engine. This deliberately *relaxes* the assignment's "the model doesn't decide" stance in
-> exchange for a more flexible, conversational bot (it can reassure and ask follow-ups). The weather facts and
-> threshold results remain code-owned and guardrail-enforced, and the pure-deterministic path is preserved
-> (`WA_DETERMINISTIC=1`) and is what the eval suites verify. The sections below describe the deterministic
-> architecture and the review fixes that still hold; the LLM-reasoner path is covered by `tests/test_advisor.py`
-> (stubbed advisor) and is documented as not-yet-fully-live-verified in `evals/NOTES.md`.
+> **Post-review conversational update (2026-10-03).** To stop the bot dead-ending on normal queries while
+> **keeping the safety decision in code** (no reviewer red flag), the DEFAULT path stays deterministic and
+> gained two code-decided outcomes: **reassure** (a SOP written for the activity applies but its threshold is
+> not met → a grounded "checked, no concern" line citing the policy and value) and **clarify** (the activity
+> has a group-restricted policy and no group was stated → ask which group, never assume). The model still only
+> parses intent and rephrases chosen advice. A separate **LLM-reasoner + guardrails** mode (`WA_LLM_REASONER=1`)
+> is offered as a documented *alternative* where the model decides relevance/framing, guardrailed by
+> `verify_advice` with a deterministic fallback — it is not the default, precisely because it moves the decision
+> into the model. The reassure/clarify logic is covered by the eval suites and unit tests; the LLM-reasoner path
+> is covered by `tests/test_advisor.py` (stubbed) and is not-yet-fully-live-verified (see `evals/NOTES.md`).
 
 ## Review summary
 
