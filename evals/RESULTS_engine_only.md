@@ -1,8 +1,8 @@
 # Eval results (fixture suite)
 
-- Date: 2026-10-03T04:35:17
+- Date: 2026-10-03T05:16:34
 - Model: openai/gpt-oss-20b
-- Git SHA: 52f953b
+- Git SHA: 2525036
 - Mode: engine; LLM runs per case: 3 (a case passes only if all runs pass)
 - Summary: 32 PASS, 0 FAIL, 0 INFRA ERROR, 22 NOT RUN, 0 SKIPPED
 

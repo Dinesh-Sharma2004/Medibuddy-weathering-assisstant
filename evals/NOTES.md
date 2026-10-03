@@ -179,3 +179,18 @@ Root causes and fixes:
 Verified: pytest 93 passed; fixture engine 32 PASS; user all 30 PASS / 0 FAIL / 1 live SKIPPED. Real-LLM
 spot checks: "drive in bhopal" (fog)->advice; "driving a car"->asks for location; "cycle/scooter/motorbike
 in bhopal" (windy)->WA-21; calm weather->honest no_guidance.
+
+## Addendum: LLM-reasoner + guardrails path (2026-10-03)
+Per an explicit design decision, the DEFAULT production path now lets the LLM make the relevance/framing
+decision, guardrailed by the deterministic engine (set WA_DETERMINISTIC=1 for the pure-engine path).
+- engine.assess_all evaluates every SOP's condition (TRUE/FALSE/UNKNOWN + values); llm.make_advisor decides
+  action = advise | reassure | clarify | no_guidance; verify.verify_advice guardrails it (cited SOP exists,
+  advise lead TRUE / reassure lead FALSE, lead cited, numbers grounded); on any violation or provider error
+  the graph.advise node falls back to the deterministic engine.
+- Honest testing status: the advisor path is unit-tested with a STUBBED advisor (tests/test_advisor.py, 13
+  cases) covering accept/reject/clarify/fallback and JSON parsing. A full live run is NOT yet complete: during
+  live testing the provider's daily token quota (TPD 200000) was exhausted. One live decision was captured and
+  was correct ("reassure" for calm cycling: 'Wind is 6 km/h, below the 35 km/h limit [WA-21]'), but it hit a
+  Groq tool-call validation quirk (the model named the tool 'AskAdvisorDecision'); make_advisor now retries in
+  plain-JSON mode on such failures. The eval suites still run the deterministic path (the guardrail/fallback),
+  so they do not yet exercise the advisor end-to-end. pytest: 106 passed.

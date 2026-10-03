@@ -23,7 +23,7 @@ from langgraph.graph import END, StateGraph
 from . import engine
 from .conditions import TRUE
 from .sops import DIMENSIONS, SOPError, SOPSet, validate_sops
-from .verify import verify_reply
+from .verify import _numbers, verify_advice, verify_reply
 from .weather import WeatherClient, build_snapshot, forecast_params
 
 # Used only when the SOP file itself is invalid, so its `messages` section cannot be trusted.
@@ -65,7 +65,10 @@ def place_label(c: dict) -> str:
 
 def build_graph(sop_path: str | Path, client: WeatherClient, parser: Parser,
                 composer: Composer | None = None, clock: Callable[[], datetime] | None = None,
-                checkpointer=None):
+                checkpointer=None, advisor: Callable[[dict], dict] | None = None):
+    """When `advisor` is given, the post-weather decision is made by the LLM-reasoner path (advise node,
+    guardrailed by verify_advice, with a deterministic fallback). When it is None, the original deterministic
+    match/resolve/compose path runs unchanged (used by the reproducible engine-tier evals and unit tests)."""
     sop_path = Path(sop_path)
 
     def policy(state) -> SOPSet:
@@ -163,6 +166,8 @@ def build_graph(sop_path: str | Path, client: WeatherClient, parser: Parser,
         if not log:
             return finish(state, "explain", pol.messages["no_prior_decision"], explained_turn=None)
         d = log[-1]
+        if d.get("explanation"):   # advisor path precomputes the rationale at decision time
+            return finish(state, "explain", d["explanation"], "explain", explained_turn=d["turn"])
         by_id = {s.id: s for s in pol.sops}
         if d["outcome"] == "advice":
             parts = []
@@ -264,6 +269,72 @@ def build_graph(sop_path: str | Path, client: WeatherClient, parser: Parser,
         return finish(state, "compose", text, source, verification={"passed": ok, **details},
                       state_updates={"decision_log": [*state["decision_log"], entry]})
 
+    def advise(state):
+        """LLM-reasoner path: the model decides which SOP is relevant and how to frame it; code assesses
+        every SOP deterministically, guardrails the decision (verify_advice), and falls back safely."""
+        pol, intent, snap, place = policy(state), state["intent"], state["snapshot"], state["place"]
+        records = engine.assess_all(pol, intent, snap)
+        view = [{"id": r["id"], "title": r["title"], "severity": r["severity"],
+                 "for": {"activities": r["applies_to"]["activities"], "groups": r["applies_to"]["groups"]},
+                 "result": r["result"],
+                 "checks": [{k: c[k] for k in ("field", "op", "threshold", "value") if c.get(k) is not None}
+                            for c in r["checks"]],
+                 "advice": r["advice_template"]} for r in records]
+        payload = {"user_text": state["user_text"], "place": place["label"],
+                   "snapshot_time": snap["now_local"], "time_reference": intent["time_reference"],
+                   "prior_decisions": summarize_log(state["decision_log"]), "sops": view}
+        ctx_nums = _numbers(f"{place['label']} {snap['now_local']}", set())
+        try:
+            decision = advisor(payload)
+        except Exception as e:
+            return _advise_fallback(state, records, f"advisor call failed: {e}")
+        ok, det = verify_advice(decision, records, ctx_nums, pol)
+        if not ok:
+            return _advise_fallback(state, records, det["reason"], decision=decision)
+        action, reply = decision["action"], decision["reply"].strip()
+        tr_extra = {"advisor_action": action, "advisor_cited": [decision.get("lead_sop"), *(decision.get("also_cite") or [])],
+                    "matched_sops": [r["id"] for r in records if r["result"] == "TRUE"]}
+        if action == "clarify":
+            return finish(state, "clarify", reply, "llm", **tr_extra)   # a question, not a logged decision
+        by_id = {r["id"]: r for r in records}
+        cited = [i for i in [decision.get("lead_sop"), *(decision.get("also_cite") or [])] if i in by_id]
+        entry = {"turn": len(state["decision_log"]) + 1, "outcome": action, "primary": decision.get("lead_sop"),
+                 "secondary": [i for i in cited if i != decision.get("lead_sop")], "cited": cited,
+                 "location": place["label"], "snapshot_time": snap["now_local"], "reply": reply,
+                 "severities": {i: by_id[i]["severity"] for i in cited},
+                 "evidence": {k: v for i in cited for k, v in by_id[i]["evidence"].items()},
+                 "explanation": _explain_decision(action, cited, by_id, place["label"], snap["now_local"])}
+        return finish(state, action, reply, "llm", state_updates={"decision_log": [*state["decision_log"], entry]},
+                      **tr_extra)
+
+    def _advise_fallback(state, records, reason, decision=None):
+        """Guardrail tripped (or the advisor failed): answer deterministically so nothing unsafe reaches the user."""
+        pol, intent, snap, place = policy(state), state["intent"], state["snapshot"], state["place"]
+        evals = engine.match_sops(pol, intent, snap)
+        res = engine.resolve_conflicts(pol, evals)
+        by_id = {e["id"]: e for e in evals}
+        tr_extra = {"advisor_action": (decision or {}).get("action"), "advisor_rejected": reason,
+                    "matched_sops": res["matched"]}
+        if res["primary"]:
+            approved = {"place": place["label"], "snapshot_time": snap["now_local"],
+                        "primary": {"id": res["primary"], "advice": by_id[res["primary"]]["advice"]},
+                        "secondary": [{"id": i, "advice": by_id[i]["advice"]} for i in res["secondary"]],
+                        "disclosed_ids": res["disclosed_unknown"],
+                        "disclosures": [pol.messages["unknown_disclosure"].format(
+                            sop_id=i, title=by_id[i]["title"], severity=by_id[i]["severity"]) for i in res["disclosed_unknown"]]}
+            entry = {"turn": len(state["decision_log"]) + 1, "outcome": "advice", "primary": res["primary"],
+                     "secondary": res["secondary"], "cited": res["matched"], "location": place["label"],
+                     "snapshot_time": snap["now_local"], "severities": {i: by_id[i]["severity"] for i in res["matched"]},
+                     "evidence": {k: v for i in res["matched"] for k, v in by_id[i]["evidence"].items()}}
+            return finish(state, "advise", render_approved(approved), "fallback_template",
+                          state_updates={"decision_log": [*state["decision_log"], entry]}, **tr_extra)
+        name = "data_unavailable" if res["outcome"] == "data_unavailable" else "no_guidance"
+        entry = {"turn": len(state["decision_log"]) + 1, "outcome": name, "primary": None, "secondary": [],
+                 "location": place["label"], "snapshot_time": snap["now_local"], "severities": {}, "evidence": {},
+                 "unknown": res["unknown"]}
+        return finish(state, name, pol.messages[name], "fallback_template",
+                      state_updates={"decision_log": [*state["decision_log"], entry]}, **tr_extra)
+
     def terminal_logged(name):
         """no_guidance / data_unavailable: reply from template, but still log the decision for 'why?'."""
         base = template(name)
@@ -285,11 +356,7 @@ def build_graph(sop_path: str | Path, client: WeatherClient, parser: Parser,
     g.add_node("parse_intent", parse_intent)
     for n in ("out_of_scope", "insufficient_intent", "ask_location", "location_unresolved", "weather_unavailable"):
         g.add_node(n, template(n))
-    for n in ("no_guidance", "data_unavailable"):
-        g.add_node(n, terminal_logged(n))
-    for n, f in (("explain", explain), ("resolve_location", resolve_location), ("fetch_weather", fetch_weather),
-                 ("match_sops", match_sops), ("resolve_conflicts", resolve_conflicts),
-                 ("compose", compose), ("verify", verify)):
+    for n, f in (("explain", explain), ("resolve_location", resolve_location), ("fetch_weather", fetch_weather)):
         g.add_node(n, f)
     g.set_entry_point("load_policy")
     g.add_conditional_edges("load_policy", lambda s: "parse_intent" if s["policy_raw"] else "policy_error",
@@ -299,13 +366,27 @@ def build_graph(sop_path: str | Path, client: WeatherClient, parser: Parser,
                              "system_error"])
     g.add_conditional_edges("resolve_location", lambda s: "fetch_weather" if s["place"] else "location_unresolved",
                             ["fetch_weather", "location_unresolved"])
-    g.add_conditional_edges("fetch_weather", lambda s: "match_sops" if s["snapshot"] else "weather_unavailable",
-                            ["match_sops", "weather_unavailable"])
-    g.add_edge("match_sops", "resolve_conflicts")
-    g.add_conditional_edges("resolve_conflicts", route_resolution, ["compose", "no_guidance", "data_unavailable"])
-    g.add_edge("compose", "verify")
-    for n in ("policy_error", "system_error", "out_of_scope", "insufficient_intent", "ask_location", "location_unresolved",
-              "weather_unavailable", "no_guidance", "data_unavailable", "explain", "verify"):
+    post_weather = "advise" if advisor is not None else "match_sops"
+    g.add_conditional_edges("fetch_weather", lambda s: post_weather if s["snapshot"] else "weather_unavailable",
+                            [post_weather, "weather_unavailable"])
+    always_end = ["policy_error", "system_error", "out_of_scope", "insufficient_intent", "ask_location",
+                  "location_unresolved", "weather_unavailable", "explain"]
+    if advisor is not None:
+        # LLM-reasoner path: one node decides and returns the final answer (guardrailed, with fallback).
+        g.add_node("advise", advise)
+        always_end.append("advise")
+    else:
+        # Deterministic path (unchanged): the reproducible engine-tier evals and unit tests exercise this.
+        for n in ("no_guidance", "data_unavailable"):
+            g.add_node(n, terminal_logged(n))
+        for n, f in (("match_sops", match_sops), ("resolve_conflicts", resolve_conflicts),
+                     ("compose", compose), ("verify", verify)):
+            g.add_node(n, f)
+        g.add_edge("match_sops", "resolve_conflicts")
+        g.add_conditional_edges("resolve_conflicts", route_resolution, ["compose", "no_guidance", "data_unavailable"])
+        g.add_edge("compose", "verify")
+        always_end += ["no_guidance", "data_unavailable", "verify"]
+    for n in always_end:
         g.add_edge(n, END)
     return g.compile(checkpointer=checkpointer or MemorySaver())
 
@@ -319,6 +400,19 @@ def render_approved(a: dict) -> str:
         lines += [f"- [{s['id']}] {s['advice']}" for s in a["secondary"]]
     lines += a["disclosures"]
     return "\n".join(lines)
+
+
+def _explain_decision(action: str, cited: list, by_id: dict, place: str, time: str) -> str:
+    """Precompute the 'why?' rationale for an advisor decision from the deterministic records it cited."""
+    if not cited:
+        return (f"For {place} (weather as of {time} local) no policy applied, so there is no citation to give.")
+    parts = []
+    for i in cited:
+        r = by_id[i]
+        ev = ", ".join(f"{k}={v}" for k, v in r["evidence"].items()) or "no specific value"
+        parts.append(f"{i} ({r['title']}; severity {r['severity']}; condition {r['result']}; {ev})")
+    verb = "flagged a concern" if action == "advise" else "checked and found no concern"
+    return f"I {verb} using {'; '.join(parts)}, from the live weather for {place} as of {time} local."
 
 
 def summarize_log(log: list) -> list[str]:

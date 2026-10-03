@@ -124,3 +124,100 @@ def make_composer(llm=None):
                                           ("human", json.dumps(payload, ensure_ascii=False))])
         return out.content if hasattr(out, "content") else str(out)
     return composer
+
+
+# ---------------------------------------------------------------------------
+# Advisor (LLM-reasoner + guardrails). The advisor decides which SOP is RELEVANT to the user's
+# question and how to frame it, using the SOPs as its only source of policy. Code still owns the
+# facts: every SOP's condition is evaluated deterministically and handed to the advisor as TRUE /
+# FALSE / UNKNOWN with the actual weather values, and verify_advice() rejects any decision whose
+# citation or numbers are not backed by that assessment (then the graph falls back safely).
+# ---------------------------------------------------------------------------
+ADVISOR_SYSTEM = """You are a weather-safety assistant. Your ONLY source of safety policy is the list of SOPs
+given to you in the JSON. You never invent advice, policies, thresholds or numbers of your own.
+
+You are given: the user's message, earlier decisions in this chat, the resolved place and time, and `sops` —
+every policy with its deterministic `result` already computed by code:
+  - result "TRUE"    = the policy's condition is met right now: a real, current hazard.
+  - result "FALSE"   = code checked it and the threshold is NOT met (see `checks` for value vs threshold).
+  - result "UNKNOWN" = required weather data was missing, so it could not be checked.
+
+Decide which SOPs are RELEVANT to the activity/situation the user asked about (judge by meaning, not keywords),
+then choose ONE action:
+- "advise": at least one RELEVANT SOP has result TRUE. Lead with the most serious TRUE one, cite it, and give
+  its advice. You may also cite other TRUE relevant SOPs. NEVER use "advise" for a SOP that is not TRUE.
+- "reassure": a relevant SOP exists for this activity but every relevant one is FALSE. Say plainly that no
+  policy flags a concern, and cite the policy you checked with its value vs threshold (from `checks`),
+  e.g. "wind is 12 km/h, below the 35 km/h limit [<that policy's id>]".
+- "clarify": you are NOT confident which activity/person/time the user means, or which SOP applies, or key
+  information is missing. Ask ONE short follow-up question. Do NOT assume and do NOT answer yet.
+- "no_guidance": nothing in the SOP list is relevant to what they asked.
+
+Rules:
+- Cite SOP ids in [SQUARE BRACKETS] exactly as written, and only ids from `sops`.
+- Use ONLY numbers that appear in the JSON (weather values and thresholds). Never invent or recompute a number.
+- If a relevant SOP is UNKNOWN, do not reassure; say you could not check it and name it, or ask a follow-up.
+- Prefer answering when you are confident; prefer a follow-up over a wrong assumption. Keep the reply under 100 words.
+Set `lead_sop` to the id you lead with (advise/reassure), `also_cite` to any other ids you cite, and
+`follow_up_question` only for clarify. Put the user-facing message in `reply`."""
+
+
+_ADVISOR_ACTIONS = ("advise", "reassure", "clarify", "no_guidance")
+
+JSON_INSTRUCTION = ("\n\nReply with ONLY a JSON object, no prose and no code fence:\n"
+                    '{"action": "advise|reassure|clarify|no_guidance", "lead_sop": "<id or null>", '
+                    '"also_cite": ["<id>", ...], "follow_up_question": "<text or null>", "reply": "<message>"}')
+
+
+def advisor_model() -> type[BaseModel]:
+    return create_model(
+        "Decision",
+        action=(Literal["advise", "reassure", "clarify", "no_guidance"], ...),
+        lead_sop=(Optional[str], None),
+        also_cite=(list[str], []),
+        follow_up_question=(Optional[str], None),
+        reply=(str, ...),
+    )
+
+
+def _coerce_decision(d: dict) -> dict:
+    """Normalise a raw decision dict to the expected shape (so guardrails see consistent types)."""
+    return {"action": d.get("action"), "lead_sop": d.get("lead_sop") or None,
+            "also_cite": list(d.get("also_cite") or []),
+            "follow_up_question": d.get("follow_up_question") or None,
+            "reply": (d.get("reply") or "").strip()}
+
+
+def _parse_json_decision(text: str) -> dict:
+    """Extract the decision JSON from a plain-text reply (strips code fences / surrounding prose)."""
+    s = text.strip()
+    if s.startswith("```"):
+        s = s.split("```", 2)[1] if s.count("```") >= 2 else s.strip("`")
+        s = s[s.index("{"):] if "{" in s else s
+    i, j = s.find("{"), s.rfind("}")
+    if i == -1 or j <= i:
+        raise ValueError(f"no JSON object in advisor reply: {text[:120]!r}")
+    d = json.loads(s[i:j + 1])
+    if d.get("action") not in _ADVISOR_ACTIONS:
+        raise ValueError(f"advisor returned unknown action {d.get('action')!r}")
+    return _coerce_decision(d)
+
+
+def make_advisor(llm=None):
+    """Return advisor(payload) -> decision dict. `payload` carries the user's text, the resolved place/time,
+    prior decisions, and the code-assessed SOPs (results + values). The model reasons; code guardrails it.
+
+    Tries structured output first; on any failure (some small models mis-name the tool call) it retries once
+    in plain-JSON mode. If both fail it raises, and the graph's advise node falls back to the deterministic path.
+    """
+    def advisor(payload: dict) -> dict:
+        model = llm or make_llm()
+        human = ("human", json.dumps(payload, ensure_ascii=False))
+        try:
+            structured = model.with_structured_output(advisor_model(), method="function_calling")
+            out = structured.invoke([("system", ADVISOR_SYSTEM), human])
+            return _coerce_decision(out.model_dump() if hasattr(out, "model_dump") else dict(out))
+        except Exception:
+            out = model.invoke([("system", ADVISOR_SYSTEM + JSON_INSTRUCTION), human])
+            return _parse_json_decision(out.content if hasattr(out, "content") else str(out))
+    return advisor

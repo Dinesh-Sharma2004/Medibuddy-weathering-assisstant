@@ -8,15 +8,21 @@ the one thing you care about next.
 > worked example come from a fixed test snapshot; against the live app the numbers and which SOP fires
 > depend on the actual Open-Meteo data for your city at that moment. The *interaction pattern* is the point.
 
-## Important: when you get advice vs "no guidance"
+## How it answers (advise / reassure / ask / no guidance)
 
-Each policy fires only when its **weather condition is actually met** — fog with low visibility, wind at
-or above the cycling threshold, a thunderstorm, a sub-zero morning, and so on. So on a calm, ordinary day
-the honest answer to most questions is **"I do not have a policy that applies to those conditions and
-activity."** That is the bot working correctly, not a failure: it never invents advice just to have
-something to say. To see advice, ask about an activity whose hazard is live right now (e.g. cycling when
-it's genuinely windy, driving when there's fog, any outdoor plan during a storm). The examples below show
-the *shape* of the conversation; whether a given one returns advice depends on today's weather.
+The bot reads the live weather, has code check every policy's threshold, and then replies in one of four ways:
+
+- **Advises** when a relevant policy's hazard is live — e.g. cycling when it's genuinely windy → *"wind is
+  45 km/h; treat this as a safety risk [WA-21]"*.
+- **Reassures** when a relevant policy exists but its threshold isn't met — e.g. cycling on a calm day →
+  *"no policy flags a concern; wind is 6 km/h, below the 35 km/h limit [WA-21]"*. It still cites the policy
+  and the real number, so the answer is grounded, not a guess.
+- **Asks a follow-up** when it isn't sure what you mean (which activity, who, when) — it won't assume.
+- Says **"no policy applies"** only when nothing in the rule set is relevant to what you asked.
+
+Every number it reports comes from the live API, and every answer names the SOP behind it (ask `why?` for the
+full rationale). It never invents advice or a policy. Which way it answers depends on today's weather where you
+ask — the examples below show the shape of the conversation.
 
 ## The one rule
 
@@ -84,8 +90,9 @@ weather where you are (or try a city that has it):
 | `can I cross the stream on my trail after this rain?` | WA-17 | ≥ 10 mm rain over the window |
 | `is it safe to go out in <city> during this storm?` | WA-20 | thunderstorm + gust/precip (leads over all) |
 
-When the weather isn't there, you'll get an honest *"I do not have a policy that applies"* — that's correct,
-not a bug. Driving, for instance, only has advice in fog/snow/ice; on a clear day it returns no guidance.
+When the threshold isn't met, the bot **reassures** you (citing the policy it checked and the real value),
+rather than dead-ending. Driving, for instance, flags a hazard only in fog/snow/ice; on a clear day it tells
+you it checked and found no concern. You only get "no policy applies" when nothing in the set is relevant at all.
 
 ## A real session (each follow-up is tiny)
 

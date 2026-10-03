@@ -62,6 +62,36 @@ def match_sops(policy: SOPSet, intent: dict, snapshot: dict) -> list[dict[str, A
     return out
 
 
+def assess_all(policy: SOPSet, intent: dict, snapshot: dict) -> list[dict[str, Any]]:
+    """Ground truth for the LLM-advisor path: evaluate EVERY SOP's condition on the snapshot,
+    without the rigid applies_to gate (the LLM judges relevance; this gives it the facts to judge with).
+
+    Each record carries the deterministic result (TRUE/FALSE/UNKNOWN), the per-comparison checks pulled
+    from the eval trace (field, op, threshold, actual value), the rendered advice when TRUE, and the
+    activity/group this SOP is written for. The advisor may only cite these ids, and verify_advice holds
+    its claims to these results and values.
+    """
+    ctx = EvalContext(snapshot, policy.vocabulary, intent.get("time_reference"))
+    out = []
+    for sop in policy.sops:
+        r = evaluate(sop.condition, ctx)
+        checks = [{k: t.get(k) for k in ("field", "source", "op", "threshold", "value", "agg", "result")}
+                  for t in r.trace if t.get("node") in ("compare", "window_agg")]
+        rec: dict[str, Any] = {
+            "id": sop.id, "title": sop.title, "category": sop.category, "severity": sop.severity,
+            "priority": sop.priority, "override": sop.override, "applies_to": sop.applies_to,
+            "result": r.value, "evidence": r.evidence, "checks": checks, "advice": None,
+            "advice_template": sop.advice}
+        if r.value == TRUE:
+            try:
+                rec["advice"] = render_advice(sop.advice, r.evidence)
+            except MissingEvidence as e:
+                rec["result"] = UNKNOWN
+                rec["render_blocked"] = f"advice needs {{{e.args[0]}}} which is UNKNOWN"
+        out.append(rec)
+    return out
+
+
 def resolve_conflicts(policy: SOPSet, evals: list[dict]) -> dict[str, Any]:
     """Decide outcome. Order: override SOPs first, then severity (high first), then priority (LARGER wins),
     then SOP ID (ascending)."""

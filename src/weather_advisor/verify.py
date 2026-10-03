@@ -71,3 +71,66 @@ def verify_reply(draft: str, approved: dict, policy: SOPSet, baseline: str) -> t
             f"{k}={v}" for k, v in details.items() if k in ("unexpected_ids", "missing_ids", "unexpected_numbers") and v
         ) or "empty reply"
     return ok, details
+
+
+def _num(v):
+    return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+
+def verify_advice(decision: dict, records: list[dict], context_numbers, policy: SOPSet) -> tuple[bool, dict]:
+    """Guardrail for the LLM-advisor path. The advisor chooses relevance and framing; code checks it:
+
+      - every cited id exists in the assessed SOPs (`records`);
+      - action="advise" only if the lead SOP's deterministic result is TRUE (never flag a hazard that is not
+        actually live); action="reassure" only if the lead SOP is FALSE (checked, threshold not met);
+      - the reply cites the lead SOP id;
+      - every number in the reply is one code produced: a value or threshold from the assessed checks/evidence,
+        or a place/time number from `context_numbers`.
+
+    On failure the graph falls back to the deterministic engine, so a bad LLM decision never reaches the user.
+    """
+    action = decision.get("action")
+    reply = (decision.get("reply") or "").strip()
+    lead = decision.get("lead_sop")
+    cited_fields = [lead, *(decision.get("also_cite") or [])]
+    by_id = {r["id"]: r for r in records}
+    fails = []
+
+    cited_in_reply = _id_tokens(reply, policy)
+    bad_ids = sorted((set(cited_fields) | cited_in_reply) - set(by_id) - {None})
+    if bad_ids:
+        fails.append(f"cited unknown SOP ids {bad_ids}")
+
+    if action == "advise":
+        if not lead or by_id.get(lead, {}).get("result") != "TRUE":
+            fails.append(f"'advise' requires lead SOP TRUE; lead={lead} result={by_id.get(lead, {}).get('result')}")
+    elif action == "reassure":
+        if not lead or by_id.get(lead, {}).get("result") != "FALSE":
+            fails.append(f"'reassure' requires lead SOP FALSE; lead={lead} result={by_id.get(lead, {}).get('result')}")
+    elif action == "clarify":
+        if not (decision.get("follow_up_question") or "").strip():
+            fails.append("'clarify' needs a follow_up_question")
+    elif action != "no_guidance":
+        fails.append(f"unknown action {action!r}")
+
+    if action in ("advise", "reassure"):
+        if lead and lead not in cited_in_reply:
+            fails.append(f"reply does not cite lead SOP {lead}")
+        allowed = set(context_numbers or [])
+        for r in records:
+            for v in r.get("evidence", {}).values():
+                if _num(v):
+                    allowed.add(round(float(v), 4))
+            for c in r.get("checks", []):
+                for v in (c.get("threshold"), c.get("value")):
+                    if _num(v):
+                        allowed.add(round(float(v), 4))
+        strip = _id_tokens(reply, policy)
+        bad_nums = sorted({n for n in _numbers(reply, strip) if round(n, 4) not in allowed})
+        if bad_nums:
+            fails.append(f"reply has ungrounded numbers {bad_nums}")
+
+    if action in ("advise", "reassure", "clarify", "no_guidance") and not reply:
+        fails.append("empty reply")
+
+    return (not fails), {"action": action, "lead_sop": lead, "reason": "; ".join(fails)}

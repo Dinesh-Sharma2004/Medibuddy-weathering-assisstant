@@ -1,15 +1,23 @@
 # Weather-Advisory Support Bot
 
 A LangGraph chat bot that answers outdoor-activity safety questions **only from written policies (SOPs)** applied to
-live Open-Meteo weather. The model never decides facts: it (a) turns the question into structured fields and
-(b) rephrases advice that code has already chosen. Everything else is deterministic code.
+live Open-Meteo weather.
 
-> **Honest project status is in [Status](#status-what-is-done-and-what-is-not).** Short version: the engine, graph,
-> UI, SOPs and both eval suites are built and tested; the real `sops/sops.yaml` (21 SOPs) is now exercised
-> end-to-end (user suite 30 PASS / 0 FAIL / 1 live SKIPPED, `pytest` 93 passed). A senior-review pass fixed
-> three real defects — see [`REVIEW_REPORT.md`](REVIEW_REPORT.md). **Caveats:** the LLM tier here ran at N=1
-> (project bar is N=3; two fixture cases show provider-429 INFRA ERROR), and the live S2 case PASSes only when
-> severe weather is actually active (today it SKIPPED).
+**Two decision modes** (see [Decision modes](#decision-modes-llm-reasoner-vs-deterministic)):
+- **Default — LLM-reasoner + guardrails.** Code evaluates every SOP's condition deterministically (TRUE/FALSE/UNKNOWN)
+  and hands the results to the model; the model decides which SOP is *relevant* to the question and how to *frame* the
+  reply (flag a hazard, reassure that a checked threshold isn't met, or ask a follow-up). It never decides the weather
+  facts or whether a threshold is met — a deterministic guardrail (`verify_advice`) rejects any decision that cites a
+  policy whose condition isn't actually met or that uses an ungrounded number, and falls back to the pure engine.
+- **`WA_DETERMINISTIC=1` — pure engine.** Code alone matches SOPs and picks the answer; the model only parses intent and
+  rephrases the chosen advice. This is what the reproducible eval suites and unit tests exercise.
+
+> **Honest project status is in [Status](#status-what-is-done-and-what-is-not).** The engine, graph, UI, SOPs and both
+> eval suites are built and tested; the real `sops/sops.yaml` (21 SOPs) is exercised end-to-end in the deterministic
+> mode (user suite 30 PASS / 0 FAIL / 1 live SKIPPED). The **LLM-reasoner path** is unit-tested with a stubbed advisor
+> (`tests/test_advisor.py`, 13 cases) and its guardrail + deterministic fallback are verified; a full live run of it is
+> **not yet complete** (the provider's daily token quota was exhausted during testing — one captured live decision was
+> correct). `pytest` 106 passed. See [`REVIEW_REPORT.md`](REVIEW_REPORT.md).
 
 ## Setup and run
 
@@ -119,7 +127,28 @@ flowchart TD
     H -->|ok| R1[reply_source: llm]
     H -->|fail| R2[reply_source: fallback_template]
 ```
-Every terminal branch is its own node, so the trace names exactly what happened.
+Every terminal branch is its own node, so the trace names exactly what happened. The diagram shows the
+**deterministic** post-weather path (`match_sops → resolve_conflicts → compose → verify`); the default
+production path replaces those four nodes with a single `advise` node (below).
+
+## Decision modes (LLM-reasoner vs deterministic)
+
+After `fetch_weather`, the graph takes one of two post-weather paths, chosen at build time:
+
+- **LLM-reasoner + guardrails (default).** `engine.assess_all` evaluates **every** SOP's condition on the
+  snapshot (TRUE/FALSE/UNKNOWN, with the actual values and thresholds). The `advise` node hands that to the
+  model (`llm.ADVISOR_SYSTEM`), which decides which SOP is *relevant* and the framing:
+  `advise` (a relevant SOP is TRUE → flag the hazard), `reassure` (relevant SOP is FALSE → "wind is 12 km/h,
+  below the 35 limit [WA-21]"), `clarify` (unsure → ask one follow-up, never assume), or `no_guidance`.
+  `verify_advice` is the guardrail: a cited SOP must exist, an `advise` lead must actually be TRUE (a
+  `reassure` lead FALSE), the lead must be cited, and every number must be one code produced. Any violation,
+  or an advisor/provider error, **falls back to the deterministic engine**, so nothing unsafe reaches the user.
+- **Deterministic (`WA_DETERMINISTIC=1`).** The original `match_sops → resolve_conflicts → compose → verify`
+  path: code matches and picks the answer, the model only parses intent and rephrases chosen advice. This is
+  what the reproducible eval suites and most unit tests exercise, and it is the guardrail/fallback above.
+
+What the model never does in either mode: read or invent weather values, or override a threshold result —
+those are deterministic, and the guardrail/verifier enforce it.
 
 | Branch | Why it exists |
 |---|---|
