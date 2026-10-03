@@ -98,6 +98,7 @@ UFILES = {
     "u_clearnight": upayload({"is_day": 0, "cloud_cover": 10, "visibility": 20000, "precipitation": 0}),  # WA-18
     "u_photo": upayload({"visibility": 20000, "cloud_cover": 50, "precipitation": 0, "wind_speed_10m": 10}),  # WA-19
     "u_storm": upayload({"weather_code": 95, "wind_gusts_10m": 50, "precipitation": 6}),  # WA-20 override
+    "u_wind": upayload({"wind_speed_10m": 45}),                                       # WA-21 cycling/two-wheeler
 }
 
 for name, data in {**FILES, **UFILES}.items():

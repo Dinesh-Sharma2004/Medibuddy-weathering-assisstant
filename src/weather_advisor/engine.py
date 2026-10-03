@@ -12,12 +12,22 @@ from .sops import DIMENSIONS, SOP, SOPSet
 
 
 def applies(sop: SOP, intent: dict) -> tuple[bool, str]:
-    """Dimensions AND; tags within a list OR; `any` is unrestricted; no intent tag never satisfies a restriction."""
+    """Dimensions AND; tags within a list OR; `any` is unrestricted; no intent tag never satisfies a restriction.
+
+    Exception: `question_types` is a *refinement*, not a gate. It describes how the user phrased the
+    question (safety_check / planning / suitability / ...); it should narrow matching only when the user
+    actually expressed one. A bare activity statement like "driving in Bhopal" carries no question type,
+    and a real fog hazard must still apply, so an empty intent question_type does not exclude any SOP.
+    activities and groups still gate: an unspecified activity or vulnerable group never matches a SOP
+    that requires one (the bot must not guess the activity or that a child/pet/elder is involved).
+    """
     for dim in DIMENSIONS:
         want = sop.applies_to[dim]
         if want == "any":
             continue
         have = set(intent.get(dim) or [])
+        if dim == "question_types" and not have:
+            continue   # user did not frame a question type -> do not gate on it
         if not have & set(want):
             return False, f"{dim}: need one of {want}, intent has {sorted(have)}"
     return True, "all dimensions satisfied"

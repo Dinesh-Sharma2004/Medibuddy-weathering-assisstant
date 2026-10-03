@@ -32,7 +32,7 @@ the system's **deliberate, documented** behaviour rather than changing the syste
 | Live weather via Open-Meteo, explicit lat/lon + field lists | `weather.py: forecast_params` (`timezone=auto`, per-section field lists) | Live request succeeds with the full real field union | PASS |
 | Geocoding first; empty/error → same honest fallback | `graph.py: resolve_location`, `weather.py: OpenMeteoClient.geocode` | Evals UF1 (timeout), fixture F2/F3 (empty/error) | PASS |
 | Never invent weather facts; numbers come from the API | `verify.py` (ID + number grounding) + deterministic `render_approved` | Fixture V1/X0, user UA1/UC1/UOVR `reply_numbers_grounded` | PASS |
-| ≥10 SOPs, ≥3 categories, severity range, ≥1 fuzzy | `sops/sops.yaml` — 20 SOPs, 14 categories, advisory/warning/critical, fuzzy WA-19 (weighted score) | `test_real_sops_file_loads_and_meets_shape`; user U19 | PASS |
+| ≥10 SOPs, ≥3 categories, severity range, ≥1 fuzzy | `sops/sops.yaml` — 21 SOPs, 15 categories, advisory/warning/critical, fuzzy WA-19 (weighted score) | `test_real_sops_file_loads_and_meets_shape`; user U19 | PASS |
 | Multiple SOPs may apply → deliberate, documented resolution | `engine.py: resolve_conflicts` (override → severity → priority → id) | User UC1 (WA-09/WA-10), fixture C1/S1 | PASS |
 | Situational override "regardless of category" | WA-20 (`override: true`, `applies_to` all `any`) | User UOVR under a `work_safety` question; **Fix 3** | PASS |
 | Traceable answer or explicit "no SOP applies" | decision_log + `explain` node; `no_guidance` template | User UN1; fixture M4/N1; explain unit test | PASS |
@@ -93,8 +93,8 @@ the system's **deliberate, documented** behaviour rather than changing the syste
   structurally valid and hot-add-tested, but the coverage check L4 reported **0/20** referenced.
 - **Files changed:** `evals/cases_user.yaml` (new real-SOP suite), `evals/fixtures/make_weather.py`
   (`u_*` payloads carrying the real SOPs' fields), `evals/live_cases.yaml` (`severe_sop_ids: [WA-20]`).
-- **Fix + proof:** 23 engine/e2e cases plus L1/L3/L4 now exercise all 20 SOPs through the full
-  graph; L4 passes (20/20). Deterministic engine cases run with no API budget.
+- **Fix + proof:** 27 engine/e2e cases (24 engine + 3 e2e) plus L1/L3/L4 now exercise all 21 SOPs through the full
+  graph; L4 passes (21/21). Deterministic engine cases run with no API budget.
 
 ## Architecture (as verified)
 
@@ -148,7 +148,7 @@ intent, (b) rephrase advice the code already selected. The composer never sees t
 - **Fixture suite** (`--mode all --runs 1`): **52 PASS, 0 FAIL, 2 INFRA ERROR** (M2, X4 hit the
   provider's 429 token-per-day limit after the day's runs; both passed in the earlier N=1 run — a
   provider quota issue, not a system verdict).
-- **User suite** (`--mode all --runs 1`): **30 cases executed → 29 PASS, 0 FAIL, 1 SKIPPED.** The
+- **User suite** (`--mode all --runs 1`): **31 cases executed → 30 PASS, 0 FAIL, 1 SKIPPED.** The
   SKIPPED case is S2 (live severe weather: no configured severe SOP was active at run time — reported
   as SKIPPED, never counted as PASS). All 23 real-SOP cases and L1/L3/L4 pass.
 - **compileall:** clean. **Secret scan:** PASS (keys only in gitignored `.env`/`.history`).

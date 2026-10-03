@@ -8,6 +8,16 @@ the one thing you care about next.
 > worked example come from a fixed test snapshot; against the live app the numbers and which SOP fires
 > depend on the actual Open-Meteo data for your city at that moment. The *interaction pattern* is the point.
 
+## Important: when you get advice vs "no guidance"
+
+Each policy fires only when its **weather condition is actually met** — fog with low visibility, wind at
+or above the cycling threshold, a thunderstorm, a sub-zero morning, and so on. So on a calm, ordinary day
+the honest answer to most questions is **"I do not have a policy that applies to those conditions and
+activity."** That is the bot working correctly, not a failure: it never invents advice just to have
+something to say. To see advice, ask about an activity whose hazard is live right now (e.g. cycling when
+it's genuinely windy, driving when there's fog, any outdoor plan during a storm). The examples below show
+the *shape* of the conversation; whether a given one returns advice depends on today's weather.
+
 ## The one rule
 
 - **First message:** name an **activity** and a **place** (a question word is optional). Terse is fine —
@@ -18,16 +28,19 @@ the one thing you care about next.
 
 ## Minimal first messages that work
 
-| You type | The bot understands |
-|---|---|
-| `drive in bhopal?` | driving + Bhopal + "is it safe?" |
-| `walk the dog in delhi?` | pet walk (with a pet) + Delhi |
-| `photos in bhopal tonight?` | outdoor photography + Bhopal + tonight |
-| `camping in manali this weekend` | camping + Manali + overnight window |
-| `electrical work outside in pune?` | outdoor electrical work + Pune |
+| You type | The bot understands | Advice appears when… |
+|---|---|---|
+| `cycle in bhopal?` | cycling/two-wheeler + Bhopal | it's windy (≥ the policy threshold) |
+| `drive in bhopal?` | driving + Bhopal | there's fog / snow / ice |
+| `walk the dog in delhi?` | pet walk (with a pet) + Delhi | hot pavement or snow underfoot |
+| `photos in bhopal tonight?` | outdoor photography + Bhopal + tonight | conditions score as favourable |
+| `camping in manali this weekend` | camping + Manali + overnight window | the overnight low is cold |
+| `electrical work outside in pune?` | outdoor electrical work + Pune | it's raining |
 
-You write intent in plain words; you never have to learn policy names or field names. Paraphrases work —
-`I ride a scooter to work, gusty today?` reaches the same wind policy as formal wording.
+Even a bare statement with no question works — `driving a car`, `thinking of cycling`, `travelling to
+Bhopal` are all understood; if you leave out the city the bot asks for it rather than guessing. You write
+intent in plain words and never learn policy names. Paraphrases work too — `I ride a scooter to work, gusty
+today?` reaches the cycling wind policy, and `jog at lunchtime, sun a problem?` reaches the UV-style rules.
 
 ## A real session (each follow-up is tiny)
 

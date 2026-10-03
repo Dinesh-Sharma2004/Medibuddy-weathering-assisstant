@@ -182,6 +182,15 @@ cases:
       - intent: {in_scope: true, location_text: Bhopal, activities: [outdoor_photography], question_types: [suitability], time_reference: today}
         expect: {branch: compose, trace: {primary_sop: WA-19}, evaluations: {WA-19: "TRUE"}, reply_contains: [WA-19, "excellent"], reply_numbers_grounded: true}
 
+  - id: U21
+    tier: engine
+    what_it_checks: High wind for cycling / two-wheelers (WA-21); the common everyday query.
+    pass_criteria: Primary WA-21 with the wind speed cited; matches even though the question type is unspecified.
+    weather: u_wind
+    turns:
+      - intent: {in_scope: true, location_text: Bhopal, activities: [cycling], time_reference: today}
+        expect: {branch: compose, trace: {primary_sop: WA-21}, evaluations: {WA-21: "TRUE"}, reply_contains: [WA-21, "45"], reply_numbers_grounded: true}
+
   # ---------------- situational override (assignment's most-emphasised case) ----------------
   - id: UOVR
     tier: engine
@@ -320,6 +329,6 @@ cases:
   - id: L1
     tier: custom
     custom: eleventh_sop
-    params: {new_id: WA-21}
+    params: {new_id: WA-22}
     what_it_checks: THE 11TH-SOP TEST on the real SOP file - append a new SOP (new id, new required field, new activity tag) to a temp copy with no Python change.
     pass_criteria: The new id is matched and cited, the snapshot value is shown, the new field is requested from the API, and the unmodified file does not cite it.

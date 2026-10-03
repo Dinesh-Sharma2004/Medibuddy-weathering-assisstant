@@ -156,3 +156,26 @@ preserved in evals/logs/.
 Results this pass: pytest 93 passed; fixture `--mode all --runs 1` 52 PASS / 0 FAIL / 2 INFRA ERROR
 (M2, X4 = provider 429 TPD, both PASS earlier the same day); user `--mode all --runs 1` 29 PASS / 0 FAIL /
 1 SKIPPED (S2 live: nothing severe active today). A clean N=3 LLM run still needs fresh provider quota.
+
+## Addendum: usability fixes (2026-10-03)
+Reported symptom: the bot answered almost nothing (out_of_scope or no_guidance) for normal queries.
+Root causes and fixes:
+- **in_scope false-negatives (bug):** the small parser model returned in_scope=false for bare activity
+  statements ("driving a car", "thinking of bicycling", "travelling to Bhopal") even while extracting a
+  valid activity tag, so the graph replied "out of scope" and discarded the intent. Fixed by (a) a clearer
+  in_scope definition in PARSE_SYSTEM and (b) a deterministic safety net in graph.parse_intent: a recognised
+  activity/group tag forces in_scope=true.
+- **question_type over-gating (bug):** bare statements carry no question_type, and SOPs gated on
+  applies_to.question_types, so a real hazard (e.g. fog for "drive in bhopal") was excluded -> no_guidance.
+  Fixed in engine.applies(): question_types is now a refinement (it narrows only when the user actually
+  expressed one); activities and groups still gate.
+- **cycling coverage gap:** no cycling/two-wheeler activity or policy existed, so the assignment's flagship
+  query mapped to the outdoor_recreation catch-all and never matched. Added a `cycling` vocabulary tag and
+  WA-21 (high wind for cycling/two-wheelers, warning). Sharpened road_travel vs cycling descriptions so
+  scooter/motorbike route to cycling. Added eval U21 + u_wind fixture; L1 hot-add id moved WA-21 -> WA-22.
+- **honesty:** USECASES.md now states that advice appears only when a policy's weather condition is live;
+  on a calm day "no guidance" is the correct answer, not a failure.
+
+Verified: pytest 93 passed; fixture engine 32 PASS; user all 30 PASS / 0 FAIL / 1 live SKIPPED. Real-LLM
+spot checks: "drive in bhopal" (fog)->advice; "driving a car"->asks for location; "cycle/scooter/motorbike
+in bhopal" (windy)->WA-21; calm weather->honest no_guidance.

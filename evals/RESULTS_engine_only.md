@@ -1,8 +1,8 @@
 # Eval results (fixture suite)
 
-- Date: 2026-10-02T19:42:16
+- Date: 2026-10-03T04:35:17
 - Model: openai/gpt-oss-20b
-- Git SHA: no commits yet
+- Git SHA: 52f953b
 - Mode: engine; LLM runs per case: 3 (a case passes only if all runs pass)
 - Summary: 32 PASS, 0 FAIL, 0 INFRA ERROR, 22 NOT RUN, 0 SKIPPED
 
@@ -393,7 +393,7 @@
 - **What it checks:** No SOP ID or advice string from either SOP file is hardcoded under src/.
 - **Pass looks like:** Zero occurrences of any ID or advice string (placeholders split out) in src/**/*.py.
 - **Details:**
-  - scanned 9 files against 92 ids/advice fragments
+  - scanned 9 files against 94 ids/advice fragments
 
 ## L4 [custom] - PASS
 

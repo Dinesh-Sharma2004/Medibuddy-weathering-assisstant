@@ -119,6 +119,12 @@ def build_graph(sop_path: str | Path, client: WeatherClient, parser: Parser,
         clean["time_reference"] = tr_ if tr_ in pol.vocabulary["time_words"] else None
         if tr_ and clean["time_reference"] is None:
             dropped["time_reference"] = [tr_]
+        # Safety net: small models sometimes return in_scope=False while still extracting a valid
+        # outdoor-activity or group tag (e.g. "driving a car" -> road_driving). A recognised tag from
+        # the SOP vocabulary IS an outdoor-activity question, so honour it rather than replying
+        # "out of scope" and throwing the extracted intent away.
+        if not clean["in_scope"] and (clean["activities"] or clean["groups"]):
+            clean["in_scope"] = True
         # Session merge (deterministic): anything the user stated replaces the stored value;
         # anything not stated is inherited. Time falls back to the configured default.
         merged = {k: clean[k] or session.get(k) or ([] if k != "location_text" and k != "time_reference" else None)

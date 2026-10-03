@@ -1,8 +1,9 @@
 # =============================================================================
-# sops/sops.yaml -- 20 POLICY RULES
+# sops/sops.yaml -- 21 POLICY RULES
 #
-# Design boundary: none of these SOPs copies the four assignment examples.
-# The assignment examples are used only to establish the required policy grammar:
+# Design boundary: the SOPs do not copy the assignment's four examples verbatim. WA-21 does cover the
+# common cycling/two-wheeler-in-wind case the assignment mentions, but with its own threshold and framing;
+# the rest establish the required policy grammar independently:
 # specific applicability, explicit evidence, deterministic conditions, severity,
 # traceability, deliberate overlap handling, and a non-numeric/fuzzy policy.
 #
@@ -30,7 +31,7 @@ messages:
 vocabulary:
   activities:
     road_driving: "Driving a car, taxi, bus or similar road vehicle."
-    road_travel: "Travel on roads by motor vehicle or public road transport."
+    road_travel: "Travel on roads in a car, taxi, bus or other four-wheeled or public road transport (NOT a two-wheeler)."
     field_sport: "Outdoor sports played on an open field, such as cricket or football."
     mountain_trek: "Trekking or hiking on mountainous terrain."
     snow_trail: "Walking or hiking on trails with snow already on the ground."
@@ -44,6 +45,7 @@ vocabulary:
     stargazing: "Observing the night sky for leisure or amateur astronomy."
     outdoor_photography: "Outdoor photography, including landscape and general field photography."
     outdoor_waiting: "Standing or waiting outdoors for a meaningful period."
+    cycling: "Riding any two-wheeler outdoors: a bicycle, e-bike, scooter, moped or motorcycle."
     outdoor_recreation: "General outdoor recreation without a more specific activity tag."
   groups:
     children: "Young children."
@@ -643,3 +645,26 @@ sops:
       - "Vocabulary: applies across all outdoor activities AND all question types, but only after the intent is classified as an in-scope outdoor weather question (out-of-scope messages never reach SOP matching)."
     # Design/source: Borrowed the multi-hazard/impact-based reasoning pattern from WMO and the stop-and-shelter action from NWS lightning/outdoor-sport guidance (https://www.weather.gov/safety/lightning-sports), while deliberately avoiding the assignment's low-pressure/cyclonic example.
     # Advantage/shortcoming/alternative: Advantage—captures combined convective risk that no single scalar threshold represents; shortcoming—weather code is modelled and not direct lightning detection; alternative—combine official thunderstorm/lightning alerts with local warning feeds.
+
+  - id: WA-21
+    title: "High wind for cycling and two-wheelers"
+    category: cycling_safety
+    severity: warning
+    priority: 62
+    applies_to:
+      activities: [cycling]
+      groups: any
+      question_types: any
+    requires:
+      - {field: wind_speed_10m, source: current}
+    condition:
+      compare: {field: wind_speed_10m, source: current, op: ">=", value: 35, as: wind_kmh}
+    advice: "Wind is {wind_kmh} km/h; for cycling or a two-wheeler treat this as a safety risk, not just a comfort issue — expect handling to be affected and consider postponing or taking a more sheltered route."
+    rationale: "Cycling and light two-wheelers are destabilised by strong wind, so this is a safety rule rather than a comfort note. The 35 km/h trigger is a prototype policy boundary (the assignment's own cycling/wind example used 40 km/h; this uses a different value and its own framing). It covers the common two-wheeler case the earlier SOP set omitted."
+    edge_cases:
+      - "Boundary: 35 km/h is included."
+      - "Missing data: missing wind speed yields UNKNOWN."
+      - "Overlap: the convective override WA-20 leads over this rule when its combined storm signals are present."
+      - "Vocabulary: cycling covers bicycles, e-bikes and light two-wheelers; it is distinct from road_driving (cars) and road_travel (buses/road transport)."
+    # Design/source: Borrowed the wind-as-a-stability-hazard idea from NWS Wind Hazards (https://www.weather.gov/safety/wind-hazards); Open-Meteo supplies wind_speed_10m.
+    # Advantage/shortcoming/alternative: Advantage—covers the most common everyday query (cycling/two-wheeler in wind); shortcoming—10 m wind is not rider-height gust exposure; alternative—use gust data and route-specific exposure.

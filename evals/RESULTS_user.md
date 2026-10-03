@@ -1,10 +1,10 @@
 # Eval results (user suite)
 
-- Date: 2026-10-02T19:34:11
+- Date: 2026-10-03T04:37:32
 - Model: openai/gpt-oss-20b
-- Git SHA: no commits yet
+- Git SHA: 52f953b
 - Mode: all; LLM runs per case: 1 (a case passes only if all runs pass)
-- Summary: 29 PASS, 0 FAIL, 0 INFRA ERROR, 0 NOT RUN, 1 SKIPPED
+- Summary: 30 PASS, 0 FAIL, 0 INFRA ERROR, 0 NOT RUN, 1 SKIPPED
 
 | Case | Mode | Result |
 |---|---|---|
@@ -25,6 +25,7 @@
 | U17 | engine | PASS |
 | U18 | engine | PASS |
 | U19 | engine | PASS |
+| U21 | engine | PASS |
 | UOVR | engine | PASS |
 | UB1 | engine | PASS |
 | UU1 | engine | PASS |
@@ -124,6 +125,11 @@
 - **What it checks:** The fuzzy/non-numeric SOP (WA-19) - a deterministic weighted score, not an LLM judgement.
 - **Pass looks like:** Primary WA-19; the score is TRUE and the reply carries the computed label, not a model opinion.
 
+## U21 [engine] - PASS
+
+- **What it checks:** High wind for cycling / two-wheelers (WA-21); the common everyday query.
+- **Pass looks like:** Primary WA-21 with the wind speed cited; matches even though the question type is unspecified.
+
 ## UOVR [engine] - PASS
 
 - **What it checks:** Situational override WA-20. A thunderstorm with an elevated impact signal must lead regardless of category, even on a work_safety question (which the override wrongly excluded before this review). A narrower rule that also fires (WA-16 gusts) becomes secondary.
@@ -178,21 +184,21 @@
 - **What it checks:** No SOP ID or advice string from either SOP file is hardcoded under src/.
 - **Pass looks like:** Zero occurrences.
 - **Details:**
-  - scanned 9 files against 92 ids/advice fragments
+  - scanned 9 files against 94 ids/advice fragments
 
 ## L4 [custom] - PASS
 
 - **What it checks:** Coverage report - which of your SOPs no case references.
 - **Pass looks like:** Every SOP is named by at least one case.
 - **Details:**
-  - 20/20 SOPs referenced by a case
+  - 21/21 SOPs referenced by a case
 
 ## L1 [custom] - PASS
 
 - **What it checks:** THE 11TH-SOP TEST on the real SOP file - append a new SOP (new id, new required field, new activity tag) to a temp copy with no Python change.
 - **Pass looks like:** The new id is matched and cited, the snapshot value is shown, the new field is requested from the API, and the unmodified file does not cite it.
 - **Details:**
-  - ok  file grew from 20 to 21 SOPs
+  - ok  file grew from 21 to 22 SOPs
   - ok  temp file validates and the run did not hit policy_error
   - ok  new id is among the matched SOPs
   - ok  new id cited in reply
@@ -206,9 +212,9 @@
 - **Pass looks like:** A configured severe SOP is TRUE for the first qualifying candidate city; the reply cites it and every number is from that snapshot. SKIPPED (never pass) if none is active.
 - **Details:**
   - no candidate city currently satisfies a configured severe SOP (date-dependent case)
-  - Bhopal: {'WA-20': 'FALSE'}
-  - Mumbai: {'WA-20': 'FALSE'}
-  - Kolkata: {'WA-20': 'FALSE'}
+  - Bhopal: error http_error: HTTP 503: {"error":true,"reason":"The service is overloaded"}
+  - Mumbai: error http_error: HTTP 503: {"error":true,"reason":"The service is overloaded"}
+  - Kolkata: error http_error: HTTP 503: {"reason":"The service is overloaded","error":true}
   - Chennai: {'WA-20': 'FALSE'}
   - Guwahati: {'WA-20': 'FALSE'}
   - Mangalore: {'WA-20': 'FALSE'}
