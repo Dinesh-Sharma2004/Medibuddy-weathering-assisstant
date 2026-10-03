@@ -40,7 +40,52 @@ the *shape* of the conversation; whether a given one returns advice depends on t
 Even a bare statement with no question works — `driving a car`, `thinking of cycling`, `travelling to
 Bhopal` are all understood; if you leave out the city the bot asks for it rather than guessing. You write
 intent in plain words and never learn policy names. Paraphrases work too — `I ride a scooter to work, gusty
-today?` reaches the cycling wind policy, and `jog at lunchtime, sun a problem?` reaches the UV-style rules.
+today?` reaches the cycling wind policy (WA-21).
+
+## Quickest way to see it answer right now
+
+The surest demo is the **fuzzy photography policy (WA-19)** — its score turns favourable on most fair-weather
+days, so it returns advice in almost any city:
+
+```
+is today a good day for photography in Bhopal?
+→ outdoor photography conditions are excellent [WA-19]   (works in Delhi, Mumbai, London, … too)
+```
+
+Other reliable ones, if the matching weather is live: **dog walk in a hot city** (`is it okay to walk my
+dog in Singapore?` → WA-11, hot pavement) and **any outdoor plan during a storm** (→ WA-20 override).
+
+## Example query for every policy (what each SOP needs)
+
+The bot answers only when the policy's weather condition is actually live. Pick the row that matches today's
+weather where you are (or try a city that has it):
+
+| Ask something like… | Fires | Needs this weather |
+|---|---|---|
+| `is today good for outdoor photography in <city>?` | WA-19 | fair conditions (fires most days) |
+| `is tonight good for stargazing in <city>?` | WA-18 | clear night, low cloud, good visibility |
+| `is it safe to cycle / ride my scooter in <city>?` | WA-21 | wind ≥ 35 km/h (windy/coastal) |
+| `is it safe to drive in <city>?` | WA-01 | fog with low visibility |
+| `should I drive to <city> in this snow?` | WA-02 | snow squall (snow + low vis + gusts) |
+| `is the road safe, it's freezing and sleeting?` | WA-03 | freezing precipitation, temp ≤ 0 |
+| `is it safe to play cricket in <city>?` | WA-04 | hail / thunderstorm code |
+| `is it okay to trek <mountain> today?` | WA-05 | fresh snowfall over the window |
+| `can I hike the snow trail at <place>?` | WA-06 | snow already on the ground |
+| `is it okay to camp overnight in <cold place>?` | WA-07 | cold overnight (apparent ≤ 5 °C) |
+| `should I cover my garden plants in <city> tonight?` | WA-08 | frost (daily min ≤ 2 °C) |
+| `is it safe to do heavy outdoor work in <hot city>?` | WA-09 | high wet-bulb (≥ 28 °C) |
+| `I'm a new outdoor worker in <hot city>, safe today?` | WA-10 | apparent ≥ 30 °C + "new/returning worker" |
+| `is it okay to walk my dog in <hot city>?` | WA-11 | hot pavement (surface ≥ 45 °C) |
+| `walk the dog, there's snow on the ground?` | WA-12 | snow depth + snowing |
+| `my kids are waiting outside in <cold city>, okay?` | WA-13 | cold (apparent ≤ 8 °C) + children |
+| `can my elderly parent go out in <cold city>?` | WA-14 | cold (apparent ≤ 5 °C) + elderly |
+| `is it safe to do outdoor electrical work, it's raining?` | WA-15 | any current precipitation |
+| `setting up a canopy/tent in <windy city>, safe?` | WA-16 | gusts ≥ 45 km/h |
+| `can I cross the stream on my trail after this rain?` | WA-17 | ≥ 10 mm rain over the window |
+| `is it safe to go out in <city> during this storm?` | WA-20 | thunderstorm + gust/precip (leads over all) |
+
+When the weather isn't there, you'll get an honest *"I do not have a policy that applies"* — that's correct,
+not a bug. Driving, for instance, only has advice in fog/snow/ice; on a clear day it returns no guidance.
 
 ## A real session (each follow-up is tiny)
 
