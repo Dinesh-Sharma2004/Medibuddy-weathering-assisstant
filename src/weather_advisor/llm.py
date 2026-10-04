@@ -1,6 +1,6 @@
 """The only module that talks to an LLM. The model does language only:
   (a) parse the question into structured intent (tags come from the SOP file's vocabulary),
-  (b) rephrase advice that code has already decided.
+  (b) put the outcome that code has already decided (advice or reassurance) into conversational words.
 It is never given SOP logic, thresholds or the weather snapshot, and compose never sees the raw user text.
 """
 from __future__ import annotations
@@ -104,16 +104,32 @@ def make_parser(llm=None):
     return parser
 
 
-COMPOSE_SYSTEM = """You rewrite approved safety advice into a short, friendly reply. The approved advice is final.
+COMPOSE_SYSTEM = """You turn an already-decided weather-safety result into a short, natural, conversational reply,
+the way a helpful friend would answer. The decision in the JSON is final. Add no policy, no advice, no thresholds,
+no values and no SOP IDs of your own.
+
+Speak to the person's situation using the extracted fields: `activities` (what they plan to do), `groups` (who it is
+for), `place`, and `time_reference` (the period they asked about, e.g. today or tonight). Open with a direct answer
+to their plan, e.g. "For cycling in <place> today, ...". Never just list policy output.
+
+`outcome` says what was decided:
+- "advice": a policy flagged a hazard. Lead with `primary` and its advice, then briefly mention every `secondary`
+  item, and include every line in `disclosures` as given.
+- "reassure": no policy flagged a concern. Say so warmly and plainly, and explain it in everyday words from each
+  item in `checks`: what that policy watches (`title`), the current reading (`readings[].value`) and the level at
+  which it would flag a concern (`flagged_when`). Example: "wind is 10.6 km/h, well under the 35 km/h level where
+  cycling gets risky [WA-21]". Do not claim it is safe in general: only that the checked policy is not triggered.
+
 Rules:
-- Use ONLY the facts in the JSON. Add no policy, no advice, no thresholds, no values, no SOP IDs of your own.
-- Keep every SOP ID in square brackets exactly as given, next to the advice it belongs to.
+- Use ONLY the facts in the JSON. Do not mention rain, sunshine, temperature or any condition that is not in it.
+- Keep every SOP ID in square brackets exactly as given, next to what it belongs to. Cite every ID given.
 - Keep every number exactly as written, as digits. Do not round, convert or add numbers.
-- Lead with `primary`. Then mention every item in `secondary` briefly. Include every line in `disclosures` as given.
-- State the place (`place`) and the weather time (`snapshot_time`, local) once.
+- Take units only from `hazard_description` / the advice text. Say field names in plain words ("wind speed"),
+  never raw names like wind_speed_10m.
+- Mention the weather time once, as `as_of` ("as of 1:45 PM local time"). The readings are the conditions at that
+  time, not a forecast for a later hour: never say they will hold later.
 - `prior_decisions` are earlier answers in this chat: do not contradict them; do not mention numbers from them.
-- If `time_reference` is given, say which period the advice covers.
-- Keep the whole reply under 100 words.
+- No bullet lists, headings or phrases like "here is what I checked". 2 to 4 sentences, under 100 words.
 Reply with the message text only."""
 
 

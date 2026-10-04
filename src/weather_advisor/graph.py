@@ -61,6 +61,24 @@ Parser = Callable[[str, SOPSet, dict], dict]
 Composer = Callable[[dict], str]
 
 
+def friendly_time(iso: str | None) -> str:
+    """'2026-10-04T13:45' -> '1:45 PM' (local time) for conversational replies; falls back to the raw text."""
+    try:
+        t = datetime.fromisoformat(iso)
+    except (TypeError, ValueError):
+        return str(iso or "")
+    return f"{t.hour % 12 or 12}:{t.minute:02d} {'AM' if t.hour < 12 else 'PM'}"
+
+
+def conversation_context(intent: dict, place: str, snapshot_time: str) -> dict:
+    """The fields code extracted for this turn (never the raw user text) that the composer may use to
+    address the user's actual situation: where, what they plan to do, for whom and when."""
+    human = lambda tags: [t.replace("_", " ") for t in tags or []]
+    return {"place": place, "snapshot_time": snapshot_time, "as_of": friendly_time(snapshot_time),
+            "time_reference": intent.get("time_reference"), "activities": human(intent.get("activities")),
+            "groups": human(intent.get("groups")), "question_types": human(intent.get("question_types"))}
+
+
 def place_label(c: dict) -> str:
     return ", ".join(str(c[k]) for k in ("name", "admin1", "country") if c.get(k))
 
@@ -226,9 +244,8 @@ def build_graph(sop_path: str | Path, client: WeatherClient, parser: Parser,
         res = engine.resolve_conflicts(pol, evals)
         by_id = {e["id"]: e for e in evals}
         approved = {
-            "place": state["place"]["label"],
-            "snapshot_time": state["snapshot"]["now_local"],
-            "time_reference": state["intent"]["time_reference"],
+            **conversation_context(state["intent"], state["place"]["label"], state["snapshot"]["now_local"]),
+            "outcome": "advice",
             "primary": {"id": res["primary"], "advice": by_id[res["primary"]]["advice"]} if res["primary"] else None,
             "secondary": [{"id": i, "advice": by_id[i]["advice"]} for i in res["secondary"]],
             "disclosed_ids": res["disclosed_unknown"],
@@ -249,18 +266,37 @@ def build_graph(sop_path: str | Path, client: WeatherClient, parser: Parser,
         return o   # reassure | data_unavailable | no_guidance
 
     def reassure(state):
-        """Deterministic 'checked, no concern': a relevant SOP applies but its threshold is not met."""
+        """Deterministic 'checked, no concern': a relevant SOP applies but its threshold is not met. Code picks
+        the outcome and the checked values; the model only words it conversationally, verified like advice."""
         pol, res = policy(state), state["resolution"]
         by_id = {e["id"]: e for e in state["evals"]}
-        text, cited = render_reassure(res["reassure"], by_id)
+        fallback, cited = render_reassure(res["reassure"], by_id)
         place, time = state["place"]["label"], state["snapshot"]["now_local"]
+        text, source, details = fallback, "template", {}
+        if composer is not None:
+            sops = {s.id: s for s in pol.sops}
+            payload = {**conversation_context(state["intent"], place, time), "outcome": "reassure",
+                       "checks": [reassure_check(by_id[i], sops[i].advice) for i in cited],
+                       "prior_decisions": summarize_log(state["decision_log"])}
+            approved = {"primary": {"id": cited[0]}, "secondary": [{"id": i} for i in cited[1:]],
+                        "disclosed_ids": []}
+            baseline = f"{fallback}\n{place} {time} {payload['as_of']}"
+            source = "fallback_template"
+            try:
+                draft = composer(payload)
+                ok, ver = verify_reply(draft, approved, pol, baseline)
+                details = {"verification": {"passed": ok, **ver}}
+                if ok:
+                    text, source = draft, "llm"
+            except Exception as e:
+                details = {"compose_error": str(e)}
         entry = {"turn": len(state["decision_log"]) + 1, "outcome": "reassure", "primary": None, "secondary": [],
                  "cited": cited, "location": place, "snapshot_time": time,
                  "severities": {i: by_id[i]["severity"] for i in cited},
                  "evidence": {k: v for i in cited for k, v in by_id[i]["evidence"].items()},
                  "explanation": _explain_reassure(cited, by_id, place, time)}
-        return finish(state, "reassure", text, "template",
-                      state_updates={"decision_log": [*state["decision_log"], entry]}, reassured_sops=cited)
+        return finish(state, "reassure", text, source,
+                      state_updates={"decision_log": [*state["decision_log"], entry]}, reassured_sops=cited, **details)
 
     def clarify(state):
         """Deterministic follow-up: the user named an activity but no vulnerable group, and a group-restricted
@@ -286,7 +322,8 @@ def build_graph(sop_path: str | Path, client: WeatherClient, parser: Parser,
         fallback = render_approved(approved)
         ok, details = False, {"reason": "no composer output"}
         if state["draft"] is not None:
-            ok, details = verify_reply(state["draft"], approved, policy(state), fallback)
+            ok, details = verify_reply(state["draft"], approved, policy(state),
+                                       f"{fallback}\n{approved['as_of']}")
         text, source = (state["draft"], "llm") if ok else (fallback, "fallback_template")
         res = state["resolution"]
         by_id = {e["id"]: e for e in state["evals"]}
@@ -454,6 +491,19 @@ def _reassure_line(rec: dict) -> str:
              for t in show[:2]]
     body = "; ".join(parts) if parts else "its condition was not met"
     return f"- [{rec['id']}] {rec['title']}: {body}."
+
+
+def reassure_check(rec: dict, advice_template: str) -> dict:
+    """Structured form of `_reassure_line` for the composer: what the policy watches, its reading and limit.
+    `hazard_description` is the SOP's own advice text (placeholders unfilled) so units come from the policy."""
+    def isnum(v):
+        return isinstance(v, (int, float)) and not isinstance(v, bool)
+    nums = [t for t in rec["eval_trace"] if t.get("node") in ("compare", "window_agg")
+            and isnum(t.get("value")) and isnum(t.get("threshold"))]
+    show = [t for t in nums if t.get("result") == "FALSE"] or nums
+    return {"id": rec["id"], "title": rec["title"], "hazard_description": advice_template,
+            "readings": [{"field": t["field"], "value": fmt_number(t["value"]),
+                          "flagged_when": f"{t['op']} {fmt_number(t['threshold'])}"} for t in show[:2]]}
 
 
 def render_reassure(reassure_ids: list, by_id: dict) -> tuple[str, list]:

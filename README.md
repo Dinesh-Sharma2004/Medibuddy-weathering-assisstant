@@ -138,10 +138,14 @@ production path replaces those four nodes with a single `advise` node (below).
 After `fetch_weather`, the graph takes one of two post-weather paths, chosen at build time.
 
 **Deterministic (default).** `match_sops → resolve_conflicts` decides the outcome in code, then a node renders it:
-- `advise` — a relevant SOP is TRUE → `compose` (LLM rephrases) → `verify` → reply.
-- `reassure` — a SOP *written for this activity* applies but its threshold isn't met → a code-rendered,
-  grounded line: *"No active policy flags a concern… [WA-21] High wind for cycling: wind_speed_10m is 6
-  (threshold >= 35)."* (An any-activity override is never cited here — reassurance is about the activity's own policy.)
+- `advise` — a relevant SOP is TRUE → `compose` (LLM words it conversationally, addressed to the user's activity/place/time) → `verify` → reply.
+- `reassure` — a SOP *written for this activity* applies but its threshold isn't met → code picks the outcome and
+  the checked values, then the model words it conversationally from the extracted fields (activity, place, time
+  period, reading vs limit), e.g. *"For cycling in Kurnool today you're clear as of 1:45 PM: wind is 10.6 km/h, well
+  under the 35 km/h level where cycling gets risky [WA-21]."* The same `verify_reply` guardrail as `advise` applies
+  (cited IDs and numbers must be code-produced); on rejection or an LLM error it falls back to the plain template
+  *"No active policy flags a concern… [WA-21] … is 10.6 (threshold >= 35)."* (An any-activity override is never cited
+  here — reassurance is about the activity's own policy.)
 - `clarify` — the user named an activity but no vulnerable group, and a policy for *that activity + a group*
   exists → ask which group applies, instead of guessing or dead-ending.
 - `data_unavailable` — a material SOP is UNKNOWN (missing data), disclosed.
